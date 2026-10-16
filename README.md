@@ -1,174 +1,161 @@
 # AI Vision Edge
 
-Local-first AI analytics for IP cameras. See [ai-vision-edge-project.md](ai-vision-edge-project.md) for the full spec.
-
-**Current milestone:** vision worker (ingest → detect → track → rules → events) plus the API (camera registry, events, live updates), tested with an Android phone and looping video files as cameras. Everything here is free and runs on this laptop.
+Local-first AI video analytics for IP cameras: detect and track people and vehicles, raise alerts from zones and tripwires, and review everything in a live web dashboard. Everything runs on one machine, and every component is free and open source. See [ai-vision-edge-project.md](ai-vision-edge-project.md) for the original spec.
 
 ```
-Android phone (Larix) ──RTSP publish──┐
-fake-cameras.ps1 (looping clips) ─────┤──> MediaMTX :8554 ──RTSP──> vision worker ──HTTP──> API :8000 ──> PostgreSQL
-real IP camera (later, pulled) ───────┘          └──WebRTC :8889──> browser    (cameras, status, events)   └─WebSocket──> dashboard
+Android phone (Larix) ─RTSP─┐
+looping test clips ─────────┤─> MediaMTX :8554 ─RTSP─> vision worker ─HTTP─> API :8000 ─> PostgreSQL
+real IP cameras ────────────┘        │                (detect, track,         │
+                                     │                 rules, counts)          ├─ dashboard (same port)
+                                     └──── WebRTC :8889 ── live video ─────────┘  live updates via WebSocket
 ```
 
 | Piece | Choice | License |
 |---|---|---|
 | Detector | RF-DETR Nano, exported to ONNX | Apache-2.0 |
-| Inference | OpenVINO on the Intel Iris Xe GPU; ONNX Runtime CPU fallback | Apache-2.0 / MIT |
+| Inference | OpenVINO (Intel iGPU/CPU); ONNX Runtime CPU fallback | Apache-2.0 / MIT |
 | Ingest | PyAV (FFmpeg) | BSD |
 | Tracking, zones, lines | supervision (ByteTrack, PolygonZone, LineZone) | MIT |
 | Stream server | MediaMTX 1.21.2 | MIT |
-| API | FastAPI, SQLAlchemy 2, Alembic | MIT |
+| API | FastAPI, SQLAlchemy 2, Alembic, argon2 | MIT |
 | Database | PostgreSQL 17 | PostgreSQL License |
 | Dashboard | Vite, React, TypeScript, Tailwind CSS, TanStack Query | MIT |
 
-## One-time setup
+## Daily use
 
 ```powershell
-copy .env.example .env      # then generate CAMERA_SECRET_KEY / SERVICE_TOKEN (commands are in the file)
-docker compose up -d        # MediaMTX + PostgreSQL
+docker compose up -d                      # MediaMTX + PostgreSQL (if not already running)
+.\scripts\run-api.ps1                     # terminal 1: API + dashboard on http://127.0.0.1:8000
+cd services\vision; uv run python -m app.main   # terminal 2: vision worker (add --show for preview windows)
+```
+
+Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard asks you to create the admin account.
+
+### Dashboard
+
+| Page | What you do there |
+|---|---|
+| **Overview** | Cameras online, events in the last 24 h, items needing review, recent alerts |
+| **Events** | Filter, open a snapshot, then **Acknowledge**, **Resolve** or mark **False alarm** with a note (your username is recorded) |
+| **Cameras** | Add, edit, test, enable or disable, and delete cameras; **Live view**; **Rules** opens the rule editor |
+| **Rules** (per camera) | Draw **Zones**, **Tripwires**, **Loitering** and **Occupancy** areas on a current camera image, drag corners to adjust, and set severity, classes, timing and direction. The worker applies changes within 3 s |
+| **Analytics** | People and vehicles in view per hour or day, events by type, CSV export (24 h / 7 d / 30 d, per camera) |
+| **Settings** | System health, data retention, your password, users and roles (admins), audit log (admins) |
+
+**Roles:** *admins* manage cameras, rules, users and settings. *Operators* watch and review events. New alerts pop up live, and everything updates without reloading.
+
+**Drawing tips:** people are located by their feet (the bottom of their box), so draw zones on the floor. If a person is cut off by the bottom of the image, the middle of the box is used instead.
+
+## First-time setup
+
+```powershell
+copy .env.example .env        # then fill in CAMERA_SECRET_KEY / SERVICE_TOKEN (generator commands are in the file)
+docker compose up -d
 cd services\vision
 uv sync
-uv run --group export python ..\..\scripts\export_model.py nano   # writes models\rfdetr-nano.onnx
+uv run --group export python ..\..\scripts\export_model.py nano    # writes models\rfdetr-nano.onnx
 cd ..\backend
 uv sync
-uv run alembic upgrade head # create/upgrade database tables
-```
-
-## Daily run (2 terminals)
-
-```powershell
-docker compose up -d                                                   # if not already running
-cd services\backend; uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
-cd services\vision;  uv run python -m app.main --show
-```
-
-Open the dashboard at **<http://127.0.0.1:8000>** (FastAPI serves the built dashboard from `apps/web/dist`).
-API docs: <http://127.0.0.1:8000/docs>
-
-### Dashboard development
-
-```powershell
-cd apps\web
+uv run alembic upgrade head
+cd ..\..\apps\web
 npm install
-npm run dev      # http://localhost:5173, hot reload; proxies /api and /media to the API on :8000
-npm run build    # rebuild apps/web/dist so http://127.0.0.1:8000 serves the latest version
+npm run build                 # the API serves this build at http://127.0.0.1:8000
 ```
 
-Pages: **Overview** (camera health, events in the last 24 h, recent events), **Events** (filter, open a snapshot, acknowledge / resolve / mark as false alarm with a note), **Cameras** (add, edit, test connection, enable/disable, delete, and live video for streams that go through MediaMTX). Everything updates live over a WebSocket; new events also pop up as notifications.
+## Cameras
 
-Add a camera (the worker picks it up within 10 s):
+**Android phone (free, for testing):** install **Larix Broadcaster** and add a connection:
+- URL: `rtsp://<laptop Wi-Fi IP>:8554/cam1` (find the IP with `ipconfig`)
+- User: `publisher`, password: `changeme-publish`
+- Video: 640×480, 15 fps
+
+In the dashboard, add a camera with stream URL `rtsp://127.0.0.1:8554/cam1`. Mount the phone high and angled down, keep it plugged in, and only film places you're allowed to. If the phone can't connect, allow Docker Desktop on *Private* networks in Windows Firewall (TCP 8554).
+
+**Real IP camera:** add it in the dashboard with its RTSP URL (prefer the low-resolution substream), for example `rtsp://user:pass@192.168.1.50:554/stream2`. Passwords are encrypted in the database and never shown again. For live view in the browser, also add the camera as a MediaMTX source (see `infra/mediamtx/mediamtx.yml`) and register `rtsp://127.0.0.1:8554/<path>` instead.
+
+**Test clips without a camera:**
 
 ```powershell
-Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/cameras -ContentType application/json `
-  -Body '{"name": "Phone (Larix)", "stream_url": "rtsp://127.0.0.1:8554/cam1"}'
+.\scripts\test-stream.ps1                                  # color bars on cam1
+.\scripts\test-stream.ps1 -Path cam2 -Clip samples\clip.mp4 # loop a recording as cam2
 ```
 
-Rules in `config/rules.json` are keyed by `cam<camera id>` (camera id 1 = `cam1`).
+## Tests
 
-## API overview
+```powershell
+cd services\backend; uv run pytest      # 43 API tests: auth, roles, CSRF, rules, events, analytics, retention
+cd services\vision;  uv run pytest      # 18 worker tests: rules engine, counts, ingest, events
+```
 
-| Endpoint | Purpose |
+**End-to-end test** (whole pipeline: stream, worker, API, live push). It needs the API running and `E2E_ADMIN_USERNAME` / `E2E_ADMIN_PASSWORD` in `.env`:
+
+```powershell
+cd services\vision
+uv run python ..\..\scripts\make_e2e_clip.py --image <any snapshot or photo with a person>   # once
+cd ..\backend
+uv run python ..\..\scripts\e2e.py
+```
+
+It adds a temporary camera and rules, streams a person walking through a zone and across a tripwire, and checks:
+- the alerts arrive with snapshots over the WebSocket
+- review works and records the reviewer
+- people counts reach analytics, and CSV export works
+- operators can't change settings
+- losing the stream raises an offline alert
+- the audit log records everything
+
+Then it removes the temporary camera and rules.
+
+## Deploying to an edge box (Docker)
+
+```powershell
+docker compose --profile full up -d --build    # MediaMTX, PostgreSQL, API + dashboard, worker
+```
+
+- **Dashboard:** `http://<box>:8000`. For access from other machines, change the API port binding in `compose.yaml`.
+- **Camera URLs:** cameras that go through MediaMTX are registered as `rtsp://mediamtx:8554/<path>`.
+- **Intel iGPU on a Linux host:** uncomment the `/dev/dri` device for the `vision` service and set `CONTAINER_INFERENCE_DEVICE=GPU`.
+- **Model:** the worker reads the ONNX model from `./models`.
+
+## Backups
+
+```powershell
+.\scripts\backup.ps1 [-IncludeSnapshots]                                  # -> backups\aivision-<time>.dump
+.\scripts\restore.ps1 -Dump backups\<file>.dump -Database restore_check   # verify into a scratch database
+.\scripts\restore.ps1 -Dump backups\<file>.dump                           # restore over live data (stop API + worker first)
+```
+
+## Security notes
+
+- **Logins:** argon2 password hashes and server-side sessions in an HttpOnly, SameSite cookie. Every change needs a CSRF header, and logins lock for 15 minutes after 5 failures.
+- **Protected data:** snapshots and live updates require a session. Camera passwords are encrypted and redacted from logs, errors and the audit log.
+- **Network:** the API binds to 127.0.0.1 by default. Before exposing it, put it behind HTTPS (set `COOKIE_SECURE=true`) and change the MediaMTX publish password in `infra/mediamtx/mediamtx.yml`.
+- **Retention:** events, snapshots and counts are deleted automatically after the retention period set in Settings (default 30 / 90 days).
+- **Human review:** alerts describe what was detected, not intent. A person should review every alert.
+
+## Troubleshooting
+
+| Symptom | Fix |
 |---|---|
-| `GET/POST /api/cameras`, `GET/PATCH/DELETE /api/cameras/{id}` | Camera registry. Stream URLs are encrypted at rest; passwords are masked (`***`) in every response |
-| `POST /api/cameras/{id}/test` | Try to connect and decode one frame |
-| `GET /api/events?camera_id=&event_type=&status=&severity=&since=&until=&limit=&offset=` | Event list, newest first |
-| `GET/PATCH /api/events/{id}` | Event detail; review with `{"status": "acknowledged" \| "resolved" \| "false_alarm", "note": ..., "reviewed_by": ...}` |
-| `GET /api/analytics/summary?hours=24` | Camera status counts, events by type, unreviewed count |
-| `GET /media/events/<path>` | Event snapshots |
-| `WS /api/ws` | Live push: `event`, `event_updated`, `camera`, `camera_status`, `camera_deleted` |
-| `/api/internal/*` | Worker only (`X-Service-Token` header): camera list with real URLs, status heartbeats, event ingest |
+| Camera shows *Offline* | Is the phone streaming, or the camera reachable? Use **Test** on the camera card. Check that phone and laptop are on the same Wi-Fi |
+| No zone alerts | Draw zones on the floor; make sure the person's feet (or body, if cut off) are inside; check the rule is enabled and detects `person` |
+| Slow or low fps | Plug the laptop in (battery throttles the CPU); run `uv run python -m app.benchmark` in `services\vision` |
+| `localhost` is slow or hangs | Use `127.0.0.1`: on Windows `localhost` tries IPv6 first, and Docker only listens on IPv4 |
+| Forgot the admin password | Another admin can reset it under Settings → Users. If you are the only admin, restore a backup or reset the database |
 
-The worker also runs without the API: leave `API_BASE_URL` empty and it uses `CAMERA_SOURCES` and only writes `storage/events/`.
+## Other tools
 
-## 1. Benchmark this laptop
+- **Benchmark:** `uv run python -m app.benchmark` (in `services\vision`) shows how many cameras this machine can handle.
+- **Standalone worker (no API):** leave `API_BASE_URL` empty. The worker then reads `CAMERA_SOURCES` and `config/rules.json` (draw with `uv run python -m app.draw_rules`) and writes `storage/events/`.
+- **API docs:** http://127.0.0.1:8000/docs
 
-```powershell
-cd services\vision
-uv run python -m app.benchmark
+## Project layout
+
 ```
-
-The `cameras` column shows how many streams each device can run at `INFERENCE_FPS`. If you have a recorded clip, pass `--video ..\..\samples\clip.mp4` to benchmark on real footage.
-
-- **Plug the laptop in and close heavy apps first.** On battery, Windows throttles the CPU and the numbers get much worse.
-- The first GPU run takes about a minute to compile the model. After that it's cached in `models\.ov_cache` and startup takes seconds.
-- First measurement (i7-1185G7 on battery, CPU already busy): GPU about 110 ms/frame, so about 2 cameras at 3 fps. Expect more when plugged in.
-
-## 2. Use the Android phone as a camera
-
-1. Start MediaMTX (from the repo root): `docker compose up -d mediamtx`
-2. Find the laptop's Wi-Fi IP address: `ipconfig` (the IPv4 address under "Wireless LAN adapter Wi-Fi", e.g. `192.168.1.23`).
-3. On the phone, install **Larix Broadcaster** (free on Google Play).
-4. In Larix: **Settings → Connections → New connection**
-   - URL: `rtsp://192.168.1.23:8554/cam1`
-   - Mode: Video only
-   - Login: `publisher` / Password: `changeme-publish`
-5. In Larix: **Settings → Video**: resolution **640×480** (or 1280×720) and **15 fps**. This mimics a CCTV substream.
-6. Tap the record button to start streaming.
-7. Check it on the laptop: open <http://localhost:8889/cam1> in a browser.
-8. Run the worker:
-   ```powershell
-   cd services\vision
-   uv run python -m app.main --show
-   ```
-
-Phone and laptop must be on the same Wi-Fi. If the phone can't connect, Windows Firewall is probably blocking port 8554. Allow Docker Desktop on **Private** networks when Windows asks, or add an inbound rule for TCP 8554. Guest and public Wi-Fi networks often block device-to-device traffic.
-
-Tips: keep the phone plugged in, mount it high and angled down like a real CCTV camera, and only film places you're allowed to.
-
-## 3. Simulate more cameras with video files
-
-Put `.mp4` clips in `samples\` (your own phone recordings, or free stock from Pexels/Pixabay; search for "cctv" or "parking lot"). Then:
-
-```powershell
-.\scripts\fake-cameras.ps1          # clips become cam2, cam3, cam4
+apps/web/            dashboard (Vite + React)
+services/backend/    API (FastAPI), migrations, tests
+services/vision/     worker: ingest, detector, tracker, rules, counts, tests
+infra/mediamtx/      stream server config
+scripts/             run-api, test-stream, e2e, backups, model export
+models/ samples/ storage/ backups/   local data (git-ignored)
 ```
-
-Set `CAMERA_SOURCES` in `.env` to all four `rtsp://localhost:8554/camN` URLs and run the worker. You can also skip MediaMTX and run on a file directly:
-
-```powershell
-uv run python -m app.main --source ..\..\samples\clip.mp4 --show
-```
-
-## 4. Zones, tripwires and events
-
-Draw rules on the live phone view (the worker can keep running; it reloads rules within ~2 s):
-
-```powershell
-cd services\vision
-uv run python -m app.draw_rules            # cam1; use --camera cam2 for others
-```
-
-| Key | Rule | Fires when |
-|---|---|---|
-| `1` | Zone entry | a person's feet enter the zone |
-| `2` | Tripwire | a person crosses the line (2 clicks) |
-| `3` | Loitering | a person stays in the zone longer than `dwell_seconds` (default 20) |
-| `4` | Occupancy | more than `max_count` people are in the zone (default 3) |
-
-Click points, press **Enter** to finish a zone, **u** to undo a point, **Esc** to cancel, **d** to delete the last rule, **q** to quit.
-Rules are saved to `config/rules.json`. Edit it to rename rules or change `classes`, `severity`, `cooldown_seconds`, `dwell_seconds`, `max_count`, or a tripwire's `direction` (`in`/`out`/`both`). See [config/rules.example.json](config/rules.example.json).
-
-Draw zones **on the floor**: objects are located by the bottom-center of their box (where feet touch the ground).
-
-Events are written to `storage/events/`:
-
-- `events.jsonl`: one JSON event per line
-- `YYYY/MM/DD/<event>.jpg`: snapshot with the zone and the person highlighted
-
-The worker also raises `camera_offline` after `OFFLINE_ALERT_SECONDS` (default 15) without frames, and `camera_online` when the camera recovers.
-
-## Worker output
-
-One JSON line per camera per second:
-
-```json
-{"camera": "cam1", "status": "online", "infer_fps": 3.0, "avg_infer_ms": 41.2, "frame_age_ms": 38, "objects": {"person": 2}, "track_ids": [4, 7]}
-```
-
-`frame_age_ms` is how stale the frame was when it was analyzed. It should stay low; if it climbs, the machine is overloaded.
-
-## Next milestones
-
-1. Operator login (the API and dashboard are currently open to anyone who can reach 127.0.0.1).
-2. Rules stored in the database and drawn in the dashboard instead of `draw_rules`.
-3. Retention (auto-delete old snapshots/events), analytics trends, CSV export.

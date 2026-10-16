@@ -1,5 +1,9 @@
-# Development services. The vision worker runs natively (uv) on Windows for fast
-# iteration; containerize it when deploying to the Linux edge box.
+# Development (default): MediaMTX + PostgreSQL in Docker; API and worker run natively with uv.
+#   docker compose up -d
+#
+# Edge-box deployment (everything in Docker, dashboard on http://<box>:8000):
+#   docker compose --profile full up -d --build
+# In this mode cameras that go through MediaMTX are registered as rtsp://mediamtx:8554/<path>.
 services:
   mediamtx:
     image: bluenviron/mediamtx:1.21.2
@@ -7,7 +11,7 @@ services:
     volumes:
       - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
     ports:
-      # RTSP is bound to all interfaces so the phone on your Wi-Fi can publish.
+      # RTSP is bound to all interfaces so phones/cameras on the LAN can publish.
       - "8554:8554"
       - "127.0.0.1:8888:8888"
       - "127.0.0.1:8889:8889"
@@ -30,5 +34,50 @@ services:
       timeout: 5s
       retries: 5
 
+  api:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-aivision}
+      POSTGRES_USER: ${POSTGRES_USER:-aivision}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      CAMERA_SECRET_KEY: ${CAMERA_SECRET_KEY:?set CAMERA_SECRET_KEY in .env}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?set SERVICE_TOKEN in .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    ports:
+      # Change to "8000:8000" to reach the dashboard from other machines on the LAN.
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    volumes:
+      - event_data:/data/events
+    depends_on:
+      db:
+        condition: service_healthy
+
+  vision:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: services/vision/Dockerfile
+    restart: unless-stopped
+    environment:
+      API_BASE_URL: http://api:8000
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      INFERENCE_DEVICE: ${CONTAINER_INFERENCE_DEVICE:-CPU}
+      INFERENCE_FPS: ${INFERENCE_FPS:-3}
+    volumes:
+      - ./models:/models:ro
+      - event_data:/data/events
+    # Intel iGPU on a Linux host: uncomment and set CONTAINER_INFERENCE_DEVICE=GPU in .env.
+    # devices:
+    #   - /dev/dri:/dev/dri
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   postgres_data:
+  event_data:

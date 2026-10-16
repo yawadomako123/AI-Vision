@@ -50,7 +50,8 @@ export function timeAgo(iso: string | null, now = Date.now()): string {
 export function liveViewUrl(maskedStreamUrl: string): string | null {
   try {
     const url = new URL(maskedStreamUrl);
-    const local = ["127.0.0.1", "localhost", location.hostname].includes(url.hostname);
+    // "mediamtx" is the service name when everything runs in Docker Compose.
+    const local = ["127.0.0.1", "localhost", "mediamtx", location.hostname].includes(url.hostname);
     if (url.protocol !== "rtsp:" || url.port !== "8554" || !local) return null;
     return `${location.protocol}//${location.hostname}:8889${url.pathname}`;
   } catch {
