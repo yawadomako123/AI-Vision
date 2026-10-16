@@ -35,6 +35,17 @@ def test_login_logout(client, anon):
     assert anon.get("/api/auth/me").status_code == 401
 
 
+def test_cookie_is_secure_behind_https_proxy(client, anon):
+    # http (local): not Secure, so it still works on http://127.0.0.1
+    r = anon.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PASSWORD})
+    assert "secure" not in r.headers["set-cookie"].lower()
+    # https (e.g. via `tailscale serve`): Secure
+    with make_client() as c:
+        c.base_url = "https://testserver"
+        r = c.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PASSWORD})
+        assert "secure" in r.headers["set-cookie"].lower()
+
+
 def test_csrf_header_required_for_changes(client):
     without = make_client()
     without.cookies = client.cookies

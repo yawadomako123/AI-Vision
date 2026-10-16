@@ -55,12 +55,15 @@ def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)  # sqlite drops tzinfo
 
 
-def start_session(db: Session, user: User, response: Response) -> None:
+def start_session(db: Session, user: User, response: Response, request: Request | None = None) -> None:
     token = secrets.token_urlsafe(32)
+    # Secure when configured, or automatically when the browser reached us over HTTPS (e.g.
+    # through `tailscale serve`, which forwards X-Forwarded-Proto; uvicorn runs with --proxy-headers).
+    secure = settings.cookie_secure or (request is not None and request.url.scheme == "https")
     db.add(UserSession(token_hash=_token_hash(token), user_id=user.id,
                        expires_at=_now() + timedelta(hours=settings.session_hours)))
     db.execute(delete(UserSession).where(UserSession.expires_at < _now()))  # housekeeping
-    response.set_cookie(COOKIE, token, httponly=True, samesite="lax", secure=settings.cookie_secure,
+    response.set_cookie(COOKIE, token, httponly=True, samesite="lax", secure=secure,
                         max_age=settings.session_hours * 3600, path="/")
 
 

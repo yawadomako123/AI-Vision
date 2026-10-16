@@ -80,6 +80,67 @@ In the dashboard, add a camera with stream URL `rtsp://127.0.0.1:8554/cam1`. Mou
 .\scripts\test-stream.ps1 -Path cam2 -Clip samples\clip.mp4 # loop a recording as cam2
 ```
 
+## Phone notifications (ntfy, free)
+
+1. Install the free **ntfy** app on your phone.
+2. In the dashboard, go to **Settings → Phone notifications**. Click **Generate** for a private topic, tick **Send alerts to my phone**, and click **Save**.
+3. In the ntfy app, tap **+** and subscribe to that exact topic (server `ntfy.sh`). Back in the dashboard, click **Send test**.
+
+You'll then get high-severity alerts on your phone, at most one per rule per minute (both are adjustable).
+
+**Privacy:** on the public `ntfy.sh` server, anyone who knows the topic can read the alerts, so keep the generated topic secret. Snapshot images are **not** attached by default. To keep everything, images included, on your own network, self-host ntfy:
+- Run `docker compose --profile ntfy up -d`.
+- Use server `http://<laptop IP>:2586` in Settings and in the app.
+- The phone needs to reach that address: the same Wi-Fi, or Tailscale when you're away.
+
+## Remote access (Tailscale, free)
+
+To open the dashboard on your phone from anywhere, without opening ports to the internet:
+
+1. Install **Tailscale** on the laptop and the phone, and sign in with the same account on both.
+2. On the laptop, run `tailscale serve --bg 8000`. It prints an HTTPS address like `https://my-laptop.tail1234.ts.net`.
+3. Open that address on your phone. Optionally, paste it as the **Dashboard link** in Settings → Phone notifications, so tapping an alert opens it.
+
+Only devices signed in to your Tailscale account can reach it. The API notices HTTPS and marks the login cookie `Secure` automatically. Over Tailscale everything works except **Live view**: the video stream server isn't exposed, so watch live video on the local network.
+
+## Running a pilot
+
+Before trusting the alerts, run the system for a few days and measure:
+
+1. Mount the camera where it will really be, high and angled at the floor, and draw the rules you'd actually use.
+2. Review every alert in **Events**: **Resolve** the real ones, and mark the wrong ones **False alarm**.
+3. Check **Analytics → Rule performance**. A false-alarm rate above about 30% (shown in red) means the rule needs tuning:
+   - shrink or move its zone
+   - raise its **Minimum confidence**
+   - lengthen **Repeat alerts after**
+   - for loitering, raise the dwell time
+4. Repeat until the alert rate matches what really happens.
+
+## Choosing the model (accuracy vs speed)
+
+Measured on this laptop (Iris Xe GPU, with another worker sharing it):
+
+| Model | Input | Time per frame | Person confidence on the test clip | Cameras at 3 fps |
+|---|---|---|---|---|
+| RF-DETR Nano (default) | 384 px | ~190 ms | 95.0% | ~1–2 (2–3 when the GPU is free) |
+| RF-DETR Small | 512 px | ~430 ms | 95.7% | 1 at ~2 fps |
+
+Keep **Nano** unless the pilot shows missed detections on hard scenes (people far away, dark, crowded). To try Small:
+
+```powershell
+cd services\vision
+uv run --group export python ..\..\scripts\export_model.py small    # once
+# then in .env:  MODEL_PATH=models/rfdetr-small.onnx   and restart the worker
+```
+
+To cut false alarms first, use a rule's **Minimum confidence** setting rather than a bigger model.
+
+## Adding a second camera
+
+- **Another phone:** stream Larix to `rtsp://<laptop IP>:8554/cam2`, then add a camera with `rtsp://127.0.0.1:8554/cam2` in the dashboard.
+- **An IP camera (RTSP/ONVIF):** add it with its substream URL, for example `rtsp://user:pass@192.168.1.50:554/stream2`. Use **Test** on the camera card to check it.
+- **Capacity:** about 2–3 cameras at 3 fps on this laptop's GPU with the Nano model. Use `uv run python -m app.benchmark` to check yours.
+
 ## Tests
 
 ```powershell

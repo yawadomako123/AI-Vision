@@ -40,7 +40,7 @@ def setup(body: SetupIn, request: Request, response: Response, db: Session = Dep
                 last_login_at=datetime.now(timezone.utc))
     db.add(user)
     db.flush()
-    start_session(db, user, response)
+    start_session(db, user, response, request)
     audit(db, request, user, "setup", f"user:{user.username}")
     db.commit()
     return user
@@ -58,7 +58,7 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "wrong username or password")
     throttle.succeeded(body.username, ip)
     user.last_login_at = datetime.now(timezone.utc)
-    start_session(db, user, response)
+    start_session(db, user, response, request)
     audit(db, request, user, "login")
     db.commit()
     return user
@@ -84,6 +84,6 @@ def change_password(body: PasswordChange, request: Request, response: Response,
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "current password is wrong")
     user.password_hash = hash_password(body.new_password)
     end_all_sessions(db, user.id)  # sign out everywhere else...
-    start_session(db, user, response)  # ...but keep this browser signed in
+    start_session(db, user, response, request)  # ...but keep this browser signed in
     audit(db, request, user, "password_change", f"user:{user.username}")
     db.commit()
