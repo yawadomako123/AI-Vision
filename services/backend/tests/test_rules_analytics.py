@@ -44,6 +44,27 @@ def test_operator_can_read_but_not_edit_rules(operator, client, camera):
     assert operator.post(f"/api/cameras/{camera['id']}/rules", json=ZONE).status_code == 403
 
 
+def test_rule_min_confidence_roundtrip(client, camera):
+    rule = client.post(f"/api/cameras/{camera['id']}/rules", json={**ZONE, "min_confidence": 0.6}).json()
+    assert rule["min_confidence"] == 0.6
+    assert client.patch(f"/api/rules/{rule['id']}", json={"min_confidence": 1.5}).status_code == 422
+    feed = client.get("/api/internal/rules", headers=WORKER).json()
+    assert feed[str(camera["id"])][0]["min_confidence"] == 0.6
+
+
+def test_rule_performance(client, camera):
+    for i, status in enumerate(["false_alarm", "false_alarm", "resolved", None]):
+        e = client.post("/api/internal/events", headers=WORKER,
+                        json=event_payload(camera["id"], ext_id=f"p{i}", occurred_at=datetime.now(timezone.utc).isoformat())).json()
+        if status:
+            client.patch(f"/api/events/{e['id']}", json={"status": status})
+    perf = client.get("/api/analytics/rules").json()
+    assert len(perf) == 1
+    r = perf[0]
+    assert r["rule_name"] == "Front door" and r["total"] == 4 and r["unreviewed"] == 1
+    assert r["false_alarm"] == 2 and r["false_alarm_rate"] == round(2 / 3, 3)
+
+
 # --- counts & timeseries --------------------------------------------------------
 
 def test_counts_and_timeseries(client, camera):

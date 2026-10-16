@@ -147,6 +147,7 @@ class RuleBase(BaseModel):
     direction: Literal["in", "out", "both"] = "both"
     dwell_seconds: float = Field(default=20, ge=1, le=86400)
     max_count: int = Field(default=3, ge=0, le=1000)
+    min_confidence: float = Field(default=0.0, ge=0, le=1)  # 0 = use the worker's default
     enabled: bool = True
 
 
@@ -169,6 +170,7 @@ class RuleUpdate(BaseModel):
     direction: Literal["in", "out", "both"] | None = None
     dwell_seconds: float | None = Field(default=None, ge=1, le=86400)
     max_count: int | None = Field(default=None, ge=0, le=1000)
+    min_confidence: float | None = Field(default=None, ge=0, le=1)
     enabled: bool | None = None
 
 
@@ -199,6 +201,37 @@ class SettingsOut(BaseModel):
 class SettingsUpdate(BaseModel):
     event_retention_days: int | None = Field(default=None, ge=1, le=3650)
     count_retention_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+HTTP_URL = r"^https?://[^\s/$.?#][^\s]*$"
+
+
+class NotificationSettingsOut(BaseModel):
+    enabled: bool
+    server: str
+    topic: str
+    min_severity: Literal["low", "medium", "high"]
+    include_snapshot: bool
+    dashboard_url: str
+    cooldown_seconds: int
+    has_token: bool  # the token itself is never returned
+
+
+class NotificationSettingsUpdate(BaseModel):
+    enabled: bool | None = None
+    server: str | None = Field(default=None, pattern=HTTP_URL, max_length=300)
+    # ntfy topic rules; on a public server the topic name is the only secret, so make it long.
+    topic: str | None = Field(default=None, pattern=r"^[-_A-Za-z0-9]{0,64}$")
+    min_severity: Literal["low", "medium", "high"] | None = None
+    include_snapshot: bool | None = None
+    dashboard_url: str | None = Field(default=None, pattern=r"^(https?://[^\s]+)?$", max_length=300)
+    cooldown_seconds: int | None = Field(default=None, ge=0, le=86400)
+    token: str | None = Field(default=None, max_length=300)  # "" clears it
+
+
+class NotificationTestResult(BaseModel):
+    ok: bool
+    error: str | None = None
 
 
 # --- Auth & users ------------------------------------------------------------

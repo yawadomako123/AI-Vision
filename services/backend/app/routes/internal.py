@@ -11,6 +11,8 @@ from app.config import settings
 from app.crypto import decrypt
 from app.db import get_db
 from app.live import hub, worker_contact
+from app.notifier import notifier
+from app.settings_store import get_settings
 from app.models import Camera, CountSample, DetectionRule, Event
 from app.schemas import CameraStatusIn, CountSampleIn, EventIn, EventOut, InternalCamera, RuleOut
 from app.serializers import event_out
@@ -94,4 +96,5 @@ def ingest_event(body: EventIn, db: Session = Depends(get_db)):
     db.refresh(event)
     out = event_out(event)
     hub.broadcast_from_sync("event", out.model_dump())
+    notifier.notify({**out.model_dump(), "snapshot_path": event.snapshot_path}, get_settings(db, "notifications"))
     return out

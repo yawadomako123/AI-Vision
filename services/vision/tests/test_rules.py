@@ -49,6 +49,14 @@ def test_zone_entry_ignores_other_classes():
     assert len(e.update(dets((1, 0.5, 0.5, CAR)), W, H, 0.0)) == 1
 
 
+def test_rule_min_confidence_filters_weak_detections():
+    weak = dets((1, 0.5, 0.5))
+    weak.confidence[:] = 0.45
+    assert engine(type="zone_entry", min_confidence=0.6).update(weak, W, H, 0.0) == []
+    assert len(engine(type="zone_entry", min_confidence=0.4).update(weak, W, H, 0.0)) == 1
+    assert len(engine(type="zone_entry").update(weak, W, H, 0.0)) == 1  # unset: worker default applies
+
+
 def test_zone_entry_uses_feet_not_box_center():
     # Box center is inside the zone (y=0.55) but the feet (y=0.65) are below it.
     e = engine(type="zone_entry")

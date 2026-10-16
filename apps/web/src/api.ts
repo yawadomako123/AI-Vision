@@ -105,7 +105,22 @@ export interface Rule {
   direction: "in" | "out" | "both";
   dwell_seconds: number;
   max_count: number;
+  min_confidence: number;
   enabled: boolean;
+}
+
+export interface RulePerformance {
+  camera_id: number;
+  camera_name: string;
+  rule_id: string;
+  rule_name: string | null;
+  event_type: string;
+  total: number;
+  unreviewed: number;
+  acknowledged: number;
+  resolved: number;
+  false_alarm: number;
+  false_alarm_rate: number | null;
 }
 
 export type RuleInput = Omit<Rule, "id" | "camera_id">;
@@ -121,6 +136,19 @@ export interface AppSettings {
   event_retention_days: number;
   count_retention_days: number;
 }
+
+export interface NotificationSettings {
+  enabled: boolean;
+  server: string;
+  topic: string;
+  min_severity: Severity;
+  include_snapshot: boolean;
+  dashboard_url: string;
+  cooldown_seconds: number;
+  has_token: boolean;
+}
+
+export type NotificationUpdate = Partial<Omit<NotificationSettings, "has_token">> & { token?: string };
 
 export interface SystemHealth {
   database: "ok" | "error";
@@ -195,6 +223,7 @@ export const api = {
   summary: (hours = 24) => request<Summary>(`/api/analytics/summary${query({ hours })}`),
   timeseries: (hours: number, bucket: "hour" | "day", camera_id?: string) =>
     request<Timeseries>(`/api/analytics/timeseries${query({ hours, bucket, camera_id })}`),
+  rulePerformance: (hours: number) => request<RulePerformance[]>(`/api/analytics/rules${query({ hours })}`),
   eventsCsvUrl: (f: EventFilters) => `/api/events/export.csv${query({ ...f, limit: undefined, offset: undefined })}`,
 
   authStatus: () => request<AuthStatus>("/api/auth/status"),
@@ -226,4 +255,9 @@ export const api = {
   updateSettings: (body: Partial<AppSettings>) =>
     request<AppSettings>("/api/settings", { method: "PATCH", body: JSON.stringify(body) }),
   system: () => request<SystemHealth>("/api/system"),
+  notifications: () => request<NotificationSettings>("/api/settings/notifications"),
+  updateNotifications: (body: NotificationUpdate) =>
+    request<NotificationSettings>("/api/settings/notifications", { method: "PATCH", body: JSON.stringify(body) }),
+  testNotification: () =>
+    request<{ ok: boolean; error: string | null }>("/api/settings/notifications/test", { method: "POST" }),
 };

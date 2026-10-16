@@ -1,26 +1,38 @@
-"""Operator-editable settings, stored in the settings table with code defaults."""
+"""Operator-editable settings, stored in the settings table (one JSON row per group) with code defaults."""
 
 from sqlalchemy.orm import Session
 
 from app.models import Setting
 
 DEFAULTS = {
-    "event_retention_days": 30,
-    "count_retention_days": 90,
+    "general": {
+        "event_retention_days": 30,
+        "count_retention_days": 90,
+    },
+    "notifications": {
+        "enabled": False,
+        "server": "https://ntfy.sh",
+        "topic": "",
+        "min_severity": "high",
+        "include_snapshot": False,  # off by default: on a public server the image leaves this machine
+        "dashboard_url": "",  # e.g. a Tailscale URL, used as the tap-through link
+        "token_encrypted": None,  # optional access token for a protected server
+        "cooldown_seconds": 60,
+    },
 }
 
 
-def get_settings(db: Session) -> dict:
-    row = db.get(Setting, "general")
-    return {**DEFAULTS, **(row.value if row else {})}
+def get_settings(db: Session, group: str = "general") -> dict:
+    row = db.get(Setting, group)
+    return {**DEFAULTS[group], **(row.value if row else {})}
 
 
-def update_settings(db: Session, changes: dict) -> dict:
-    current = get_settings(db)
-    current.update({k: v for k, v in changes.items() if k in DEFAULTS and v is not None})
-    row = db.get(Setting, "general")
+def update_settings(db: Session, changes: dict, group: str = "general") -> dict:
+    current = get_settings(db, group)
+    current.update({k: v for k, v in changes.items() if k in DEFAULTS[group]})
+    row = db.get(Setting, group)
     if row is None:
-        db.add(Setting(key="general", value=current))
+        db.add(Setting(key=group, value=current))
     else:
         row.value = current
     return current

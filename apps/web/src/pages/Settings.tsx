@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 
-import { api, type Role } from "../api";
+import { api, type NotificationSettings, type NotificationUpdate, type Role } from "../api";
 import { useAuth } from "../auth";
 import { Button, Card, ErrorNote, inputCls, selectCls } from "../components/ui";
 import { formatDateTime, timeAgo } from "../format";
@@ -75,6 +75,108 @@ function Retention() {
         {save.error && <ErrorNote error={save.error} />}
         {save.isSuccess && !dirty && <p role="status" className="text-ok">Saved.</p>}
         {isAdmin && <div><Button type="submit" variant="primary" disabled={!dirty || save.isPending}>Save</Button></div>}
+      </form>
+    </Card>
+  );
+}
+
+function randomTopic(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return "aivision-" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function Notifications() {
+  const qc = useQueryClient();
+  const current = useQuery({ queryKey: ["notifications"], queryFn: api.notifications });
+  const [form, setForm] = useState<NotificationUpdate | null>(null);
+  const [token, setToken] = useState("");
+  useEffect(() => {
+    if (current.data && !form) {
+      const { has_token: _t, ...rest } = current.data;
+      setForm(rest);
+    }
+  }, [current.data, form]);
+  const save = useMutation({
+    mutationFn: () => api.updateNotifications({ ...form, ...(token ? { token } : {}) }),
+    onSuccess: (data) => { qc.setQueryData(["notifications"], data); setToken(""); },
+  });
+  const test = useMutation({ mutationFn: api.testNotification });
+  if (!form) return <Card title="Phone notifications"><p className="p-4 text-sm text-muted">Loading…</p></Card>;
+  const set = <K extends keyof NotificationUpdate>(k: K, v: NotificationUpdate[K]) => setForm({ ...form, [k]: v });
+  const publicServer = (form.server ?? "").includes("ntfy.sh");
+
+  return (
+    <Card title="Phone notifications (ntfy)">
+      <form className="flex flex-col gap-3 p-4 text-sm" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
+        <ol className="list-decimal space-y-1 pl-5 text-muted">
+          <li>Install the free <strong className="text-text">ntfy</strong> app on your phone (Play Store / F-Droid / App Store).</li>
+          <li>Click <strong className="text-text">Generate</strong> below for a private topic name, then <strong className="text-text">Save</strong>.</li>
+          <li>In the ntfy app, tap <strong className="text-text">+</strong> and subscribe to that exact topic, then press <strong className="text-text">Send test</strong>.</li>
+        </ol>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={!!form.enabled} onChange={(e) => set("enabled", e.target.checked)} />
+          Send alerts to my phone
+        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Topic (keep it secret: anyone who knows it can read the alerts)</span>
+            <div className="flex gap-2">
+              <input className={`${inputCls} font-mono`} value={form.topic ?? ""} onChange={(e) => set("topic", e.target.value)}
+                     pattern="[\-_A-Za-z0-9]{0,64}" spellCheck={false} autoComplete="off" />
+              <Button onClick={() => set("topic", randomTopic())}>Generate</Button>
+            </div>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Server</span>
+            <input className={inputCls} value={form.server ?? ""} onChange={(e) => set("server", e.target.value)} type="url" required />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Notify for</span>
+            <select className={selectCls} value={form.min_severity} onChange={(e) => set("min_severity", e.target.value as NotificationSettings["min_severity"])}>
+              <option value="high">High severity only</option>
+              <option value="medium">Medium and high</option>
+              <option value="low">Everything</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">At most one per rule every (seconds)</span>
+            <input className={inputCls} type="number" min={0} max={86400} value={form.cooldown_seconds}
+                   onChange={(e) => set("cooldown_seconds", Number(e.target.value))} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Dashboard link (optional, e.g. your Tailscale URL)</span>
+            <input className={inputCls} value={form.dashboard_url ?? ""} onChange={(e) => set("dashboard_url", e.target.value)}
+                   placeholder="https://my-laptop.tailnet.ts.net" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Access token (only for a protected server){current.data?.has_token && " · saved"}</span>
+            <input className={inputCls} type="password" value={token} onChange={(e) => setToken(e.target.value)}
+                   placeholder={current.data?.has_token ? "leave empty to keep" : ""} autoComplete="off" />
+          </label>
+        </div>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" className="mt-0.5" checked={!!form.include_snapshot} onChange={(e) => set("include_snapshot", e.target.checked)} />
+          <span>
+            Attach the snapshot image
+            {publicServer && (
+              <span className="block text-xs text-warn">
+                With the public ntfy.sh server the image is uploaded to their servers. Leave this off unless you self-host ntfy.
+              </span>
+            )}
+          </span>
+        </label>
+        {save.error && <ErrorNote error={save.error} />}
+        {test.data && (
+          <p role="status" className={test.data.ok ? "text-ok" : "text-bad"}>
+            {test.data.ok ? "Test sent. Check your phone." : `Test failed: ${test.data.error}`}
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" variant="primary" disabled={save.isPending}>Save</Button>
+          <Button onClick={() => test.mutate()} disabled={test.isPending || !current.data?.topic}>
+            {test.isPending ? "Sending…" : "Send test"}
+          </Button>
+        </div>
       </form>
     </Card>
   );
@@ -184,6 +286,7 @@ const ACTION_LABELS: Record<string, string> = {
   "camera.create": "Added camera", "camera.update": "Changed camera", "camera.delete": "Deleted camera",
   "rule.create": "Added rule", "rule.update": "Changed rule", "rule.delete": "Deleted rule",
   "event.review": "Reviewed event", "events.export": "Exported events", "settings.update": "Changed settings",
+  "settings.notifications": "Changed notifications",
 };
 
 function AuditLog() {
@@ -235,6 +338,7 @@ export default function Settings() {
         <Health />
         <Retention />
       </div>
+      {isAdmin && <Notifications />}
       <ChangePassword />
       {isAdmin && <Users />}
       {isAdmin && <AuditLog />}

@@ -34,6 +34,25 @@ services:
       timeout: 5s
       retries: 5
 
+  # Optional self-hosted notification server, so alerts (and snapshots) never leave your
+  # network:  docker compose --profile ntfy up -d   -> server http://<this machine>:2586
+  # The phone must be able to reach it (same Wi-Fi, or Tailscale when away).
+  ntfy:
+    image: binwiederhier/ntfy:v2.28.0
+    profiles: ["ntfy", "full"]
+    restart: unless-stopped
+    command: serve
+    environment:
+      NTFY_BASE_URL: ${NTFY_BASE_URL:-http://localhost:2586}
+      NTFY_BEHIND_PROXY: "false"
+      # Needed for snapshot attachments (off by default in ntfy).
+      NTFY_ATTACHMENT_CACHE_DIR: /var/cache/ntfy/attachments
+      NTFY_ATTACHMENT_EXPIRY_DURATION: 24h
+    ports:
+      - "2586:80"
+    volumes:
+      - ntfy_cache:/var/cache/ntfy
+
   api:
     profiles: ["full"]
     build:
@@ -81,3 +100,4 @@ services:
 volumes:
   postgres_data:
   event_data:
+  ntfy_cache:

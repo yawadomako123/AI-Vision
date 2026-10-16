@@ -11,8 +11,14 @@ from app.auth import current_user, require_admin
 from app.config import settings as app_settings
 from app.db import get_db
 from app.live import worker_contact
+import httpx
+
+from app.crypto import encrypt
 from app.models import Camera, CountSample, Event, User
-from app.schemas import SettingsOut, SettingsUpdate
+from app.notifier import send as notifier_send
+from app.schemas import (
+    NotificationSettingsOut, NotificationSettingsUpdate, NotificationTestResult, SettingsOut, SettingsUpdate,
+)
 from app.settings_store import get_settings, update_settings
 
 router = APIRouter(tags=["analytics"])
@@ -94,6 +100,36 @@ def timeseries(
     return {"bucket": bucket, "buckets": [b.isoformat() for b in buckets], "counts": counts, "events": events}
 
 
+@router.get("/api/analytics/rules")
+def rule_performance(hours: int = Query(default=24 * 7, ge=1, le=24 * 90), _: User = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    """Per rule: how many alerts and how they were reviewed. The false-alarm rate is the number
+    to watch during a pilot: it tells you which rules need a smaller zone, a higher minimum
+    confidence or a longer cooldown."""
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    rows = db.execute(
+        select(Event.camera_id, Camera.name, Event.rule_id, Event.rule_name, Event.event_type, Event.status, func.count())
+        .join(Camera, Camera.id == Event.camera_id)
+        .where(Event.occurred_at >= since, Event.rule_id.is_not(None))
+        .group_by(Event.camera_id, Camera.name, Event.rule_id, Event.rule_name, Event.event_type, Event.status)
+    ).all()
+    rules: dict[tuple, dict] = {}
+    for cam_id, cam_name, rule_id, rule_name, etype, status_, n in rows:
+        r = rules.setdefault((cam_id, rule_id), {
+            "camera_id": cam_id, "camera_name": cam_name, "rule_id": rule_id, "rule_name": rule_name,
+            "event_type": etype, "total": 0, "unreviewed": 0, "acknowledged": 0, "resolved": 0, "false_alarm": 0,
+        })
+        r["total"] += n
+        r[status_] = r.get(status_, 0) + n
+        r["rule_name"] = rule_name or r["rule_name"]
+    out = []
+    for r in rules.values():
+        reviewed = r["total"] - r["unreviewed"]
+        r["false_alarm_rate"] = round(r["false_alarm"] / reviewed, 3) if reviewed else None
+        out.append(r)
+    return sorted(out, key=lambda r: (-r["total"], r["rule_name"] or ""))
+
+
 @router.get("/api/settings", response_model=SettingsOut)
 def read_settings(_: User = Depends(current_user), db: Session = Depends(get_db)):
     return get_settings(db)
@@ -107,6 +143,48 @@ def write_settings(body: SettingsUpdate, request: Request, admin: User = Depends
     audit(db, request, admin, "settings.update", **changes)
     db.commit()
     return result
+
+
+def _notification_out(cfg: dict) -> NotificationSettingsOut:
+    return NotificationSettingsOut(**{k: v for k, v in cfg.items() if k != "token_encrypted"},
+                                   has_token=bool(cfg.get("token_encrypted")))
+
+
+@router.get("/api/settings/notifications", response_model=NotificationSettingsOut)
+def read_notifications(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    # Admin-only: on a public ntfy server, anyone who knows the topic can read the alerts.
+    return _notification_out(get_settings(db, "notifications"))
+
+
+@router.patch("/api/settings/notifications", response_model=NotificationSettingsOut)
+def write_notifications(body: NotificationSettingsUpdate, request: Request, admin: User = Depends(require_admin),
+                        db: Session = Depends(get_db)):
+    changes = body.model_dump(exclude_unset=True)
+    logged = {k: v for k, v in changes.items() if k not in ("token", "topic")}
+    if "token" in changes:
+        token = changes.pop("token")
+        changes["token_encrypted"] = encrypt(token) if token else None
+        logged["token"] = "set" if token else "cleared"
+    if "topic" in changes:
+        logged["topic"] = "changed"
+    cfg = update_settings(db, changes, "notifications")
+    audit(db, request, admin, "settings.notifications", **logged)
+    db.commit()
+    return _notification_out(cfg)
+
+
+@router.post("/api/settings/notifications/test", response_model=NotificationTestResult)
+def test_notification(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    cfg = get_settings(db, "notifications")
+    if not cfg.get("topic"):
+        return NotificationTestResult(ok=False, error="set a topic first")
+    msg = {"title": "AI Vision Edge test", "message": "Notifications are working.", "priority": 3,
+           "tags": ["white_check_mark"]}
+    try:
+        notifier_send(cfg, msg)
+    except httpx.HTTPError as exc:
+        return NotificationTestResult(ok=False, error=str(exc)[:300])
+    return NotificationTestResult(ok=True)
 
 
 def _dir_size(path) -> tuple[int, int]:

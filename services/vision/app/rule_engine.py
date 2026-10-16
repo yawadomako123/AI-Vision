@@ -35,6 +35,7 @@ class Rule:
     direction: str = "both"  # line_crossing: in | out | both
     dwell_seconds: float = 20.0  # loitering
     max_count: int = 3  # occupancy: alert when count > max_count
+    min_confidence: float = 0.0  # ignore detections below this for this rule (0 = worker default)
     enabled: bool = True
 
     @classmethod
@@ -57,6 +58,7 @@ class Rule:
             direction=d.get("direction", "both"),
             dwell_seconds=float(d.get("dwell_seconds", 20)),
             max_count=int(d.get("max_count", 3)),
+            min_confidence=float(d.get("min_confidence") or 0.0),
             enabled=bool(d.get("enabled", True)),
         )
 
@@ -122,6 +124,8 @@ class RuleEngine:
         hits: list[RuleHit] = []
         for state in self._states:
             mask = np.isin(names, list(state.rule.classes)) if len(names) else np.zeros(0, bool)
+            if state.rule.min_confidence and len(names):
+                mask &= detections.confidence >= state.rule.min_confidence
             handler = getattr(self, f"_{state.rule.type}")
             hits.extend(handler(state, detections[mask], positions[mask], names[mask], now))
         return hits

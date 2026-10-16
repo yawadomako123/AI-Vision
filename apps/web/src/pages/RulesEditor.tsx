@@ -80,6 +80,12 @@ function RuleForm({ rule, canEdit, onDeleted }: { rule: Rule; canEdit: boolean; 
                      onChange={(e) => set("max_count", Number(e.target.value))} />
             </label>
           )}
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Minimum confidence (%)</span>
+            <input className={inputCls} type="number" min={0} max={100} step={5}
+                   value={Math.round(form.min_confidence * 100)} title="0 = use the worker's default. Raise it to cut false alarms on this rule."
+                   onChange={(e) => set("min_confidence", Math.min(1, Math.max(0, Number(e.target.value) / 100)))} />
+          </label>
           {form.type === "line_crossing" && (
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-muted">Direction</span>

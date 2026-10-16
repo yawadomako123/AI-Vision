@@ -32,6 +32,52 @@ function Stat({ label, value, sub }: { label: string; value: string | number; su
   );
 }
 
+function RulePerformanceCard({ hours, cameraId }: { hours: number; cameraId: string }) {
+  const perf = useQuery({ queryKey: ["rule-performance", hours], queryFn: () => api.rulePerformance(hours) });
+  const rows = (perf.data ?? []).filter((r) => !cameraId || String(r.camera_id) === cameraId);
+  const pct = (v: number | null) => (v === null ? "–" : `${Math.round(v * 100)}%`);
+  return (
+    <Card title="Rule performance">
+      {rows.length === 0 ? <Empty>No rule alerts in this period.</Empty> : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-line text-xs text-muted">
+              <tr>
+                <th className="px-4 py-2 font-medium">Rule</th>
+                <th className="px-3 py-2 font-medium">Camera</th>
+                <th className="px-3 py-2 text-right font-medium">Alerts</th>
+                <th className="px-3 py-2 text-right font-medium">To review</th>
+                <th className="px-3 py-2 text-right font-medium">Resolved</th>
+                <th className="px-3 py-2 text-right font-medium">False alarms</th>
+                <th className="px-3 py-2 text-right font-medium" title="Share of reviewed alerts marked as false alarm">False-alarm rate</th>
+              </tr>
+            </thead>
+            <tbody className="tabular divide-y divide-line">
+              {rows.map((r) => (
+                <tr key={`${r.camera_id}-${r.rule_id}`}>
+                  <td className="px-4 py-2 font-medium">{r.rule_name ?? r.rule_id}<span className="text-muted"> · {eventLabel(r.event_type)}</span></td>
+                  <td className="px-3 py-2">{r.camera_name}</td>
+                  <td className="px-3 py-2 text-right">{r.total}</td>
+                  <td className="px-3 py-2 text-right">{r.unreviewed}</td>
+                  <td className="px-3 py-2 text-right">{r.resolved + r.acknowledged}</td>
+                  <td className="px-3 py-2 text-right">{r.false_alarm}</td>
+                  <td className={`px-3 py-2 text-right font-medium ${(r.false_alarm_rate ?? 0) >= 0.3 ? "text-bad" : ""}`}>
+                    {pct(r.false_alarm_rate)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="border-t border-line px-4 py-2.5 text-xs text-muted">
+            Mark wrong alerts as <strong>False alarm</strong> in Events. If a rule's rate is high, shrink its zone, raise its
+            minimum confidence, or lengthen its repeat time in the rule editor.
+          </p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function Analytics() {
   const [params, setParams] = useSearchParams();
   const rangeKey = (params.get("range") as RangeKey) in RANGES ? (params.get("range") as RangeKey) : "24h";
@@ -116,6 +162,8 @@ export default function Analytics() {
           )}
         </div>
       </Card>
+
+      <RulePerformanceCard hours={range.hours} cameraId={cameraId} />
 
       <Card title="Events by type">
         <div className="flex flex-col gap-3 p-4">

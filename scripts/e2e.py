@@ -151,6 +151,17 @@ def main() -> int:
     live.start()
     check("Live updates connect (WebSocket)", live.connected.wait(10))
 
+    # Notifications: only against a server we control (never publish test alerts to ntfy.sh).
+    ntfy_server = os.environ.get("E2E_NTFY_SERVER")
+    saved_notifications = admin.get("/api/settings/notifications").json() if ntfy_server else None
+    ntfy_topic = f"aivision-e2e-{os.urandom(6).hex()}"
+    if ntfy_server:
+        admin.patch("/api/settings/notifications", json={
+            "enabled": True, "server": ntfy_server, "topic": ntfy_topic, "min_severity": "high",
+            "include_snapshot": True, "cooldown_seconds": 0})
+        test = admin.post("/api/settings/notifications/test").json()
+        check("Notification test message is delivered", test["ok"], test.get("error") or "")
+
     camera = admin.post("/api/cameras", json={"name": CAMERA_NAME, "location": "e2e",
                                               "stream_url": f"rtsp://{CAMERA_RTSP}/{PATH}"}).json()
     cam_id = camera["id"]
@@ -206,6 +217,15 @@ def main() -> int:
             pushed = [m for m in live.messages if m["type"] == "event" and m["data"]["id"] == entry["id"]]
             check("Event was pushed live to the dashboard", bool(pushed))
 
+            if ntfy_server:
+                def pushed_to_phone():
+                    r = httpx.get(f"{ntfy_server}/{ntfy_topic}/json", params={"poll": "1", "since": "all"}, timeout=10)
+                    msgs = [json.loads(line) for line in r.text.splitlines() if line.strip()]
+                    return [m for m in msgs if "Zone entry" in m.get("title", "")]
+                pushed = wait_for(pushed_to_phone, 30)
+                check("Zone alert is pushed to the phone (ntfy)", bool(pushed),
+                      "with snapshot attached" if pushed and pushed[0].get("attachment") else "no attachment")
+
             reviewed = admin.patch(f"/api/events/{entry['id']}", json={"status": "resolved", "note": "e2e"}).json()
             check("Event can be resolved; reviewer recorded from session",
                   reviewed["status"] == "resolved" and reviewed["reviewed_by"] == ENV["E2E_ADMIN_USERNAME"])
@@ -246,6 +266,9 @@ def main() -> int:
               {"camera.create", "rule.create", "event.review", "events.export"} <= actions)
     finally:
         kill_tree(publisher)
+        if saved_notifications:
+            admin.patch("/api/settings/notifications",
+                        json={k: v for k, v in saved_notifications.items() if k != "has_token"})
         live.stop = True
         if worker:
             kill_tree(worker)
