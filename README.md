@@ -119,7 +119,15 @@ docker compose --profile full up -d --build    # MediaMTX, PostgreSQL, API + das
 - **Ports:** set `API_PORT` in `.env` if 8000 is already in use.
 - **Memory:** give Docker at least **4 GB of RAM**. The worker image is about 2.9 GB (OpenVINO and OpenCV), so on a 2 GB Docker Desktop VM with little free RAM the worker container may never start. On a laptop, the native setup above is lighter.
 
-*Tested so far:* both images build, and the API container starts healthy, runs migrations, serves the dashboard and enforces login. The worker container hasn't been run on this laptop yet because of the memory limit above.
+*Tested:* the end-to-end test passes 18/18 against the Docker stack (API on port 8090, worker on OpenVINO CPU in its container). Command, run from `services\backend`:
+
+```powershell
+$env:E2E_API="http://127.0.0.1:8090"; $env:E2E_CAMERA_RTSP="mediamtx:8554"; uv run python ..\..\scripts\e2e.py
+```
+
+If Docker Desktop stops starting containers (it happens when the host runs out of memory), restart it: `docker desktop restart`.
+
+Don't run the Docker `api`/`vision` containers alongside the native API and worker against the same database, or both workers will process every camera.
 
 ## Backups
 
