@@ -22,7 +22,7 @@ from app.detector import COCO_CLASSES, Detector
 from app.event_publisher import EventPublisher
 from app.frame_reader import FrameReader
 from app.overlay import draw_rules
-from app.rule_engine import RuleEngine, RuleHit, RulesFile
+from app.rule_engine import RuleEngine, RuleHit, RulesFile, object_positions
 
 log = logging.getLogger("vision")
 
@@ -108,6 +108,10 @@ def main() -> None:
                     img = draw_rules(frame.image.copy(), engine.rules)
                     img = box_annotator.annotate(img, detections)
                     img = label_annotator.annotate(img, detections, labels)
+                    # The point the rules test against zones/lines.
+                    for x, y, _, _ in object_positions(detections, h).xyxy.astype(int):
+                        cv2.circle(img, (x, y), 7, (0, 255, 255), -1)
+                        cv2.circle(img, (x, y), 7, (0, 0, 0), 2)
                     cv2.imshow(cam["id"], img)
 
                 if now - stats["last_report"] >= 1.0:

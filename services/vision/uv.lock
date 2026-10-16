@@ -35,7 +35,7 @@ requires-dist = [
     { name = "opencv-python" },
     { name = "openvino" },
     { name = "pydantic-settings" },
-    { name = "supervision" },
+    { name = "supervision", specifier = "<0.31" },
 ]
 
 [package.metadata.requires-dev]

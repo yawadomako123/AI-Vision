@@ -55,6 +55,19 @@ def test_zone_entry_uses_feet_not_box_center():
     assert e.update(dets((1, 0.5, 0.65)), W, H, 0.0) == []
 
 
+def test_box_cut_off_at_frame_bottom_uses_center():
+    # Head-and-shoulders view: box runs off the bottom of the frame, feet not visible.
+    # Its feet would be at y=1.0 (outside the zone) but its center (0.5) is inside.
+    e = engine(type="zone_entry")
+    cut_off = sv.Detections(
+        xyxy=np.array([[480, 0.0 * H, 520, 1.0 * H]], np.float32), confidence=np.array([0.9], np.float32),
+        class_id=np.array([PERSON]), tracker_id=np.array([1]),
+    )
+    hits = e.update(cut_off, W, H, 0.0)
+    assert len(hits) == 1
+    assert hits[0].box == [480.0, 0.0, 520.0, 1000.0]  # event still reports the real box
+
+
 def test_zone_entry_cooldown_per_track():
     e = engine(type="zone_entry", cooldown_seconds=30)
     assert len(e.update(dets((1, 0.5, 0.5)), W, H, 0.0)) == 1

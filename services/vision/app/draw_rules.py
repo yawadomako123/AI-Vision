@@ -81,14 +81,20 @@ def main() -> None:
         tool, points = None, []
 
     def on_mouse(event, x, y, *_):
-        if event == cv2.EVENT_LBUTTONDOWN and tool:
+        if event == cv2.EVENT_LBUTTONDOWN and not tool:
+            print("Press 1-4 first to choose what to draw.")
+        elif event == cv2.EVENT_LBUTTONDOWN and tool:
             points.append((x, y))
+            print(f"  point {len(points)} at ({x}, {y})")
             if tool == "line_crossing" and len(points) == 2:
                 finish()
 
     window = f"Draw rules - {args.camera}"
     cv2.namedWindow(window)
     cv2.setMouseCallback(window, on_mouse)
+    # Keep it above the worker's preview window; keys only reach the focused window.
+    cv2.setWindowProperty(window, cv2.WND_PROP_TOPMOST, 1)
+    print(f"\nClick the '{window}' window first so it has focus, then:\n  {HELP}\n")
 
     last = None
     while True:
@@ -116,10 +122,17 @@ def main() -> None:
         key = cv2.waitKey(30) & 0xFF
         if key == ord("q") or cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
             break
-        if key in TOOLS and last is not None:
+        if key in TOOLS and last is None:
+            print("No video yet: start streaming from the phone first.")
+        elif key in TOOLS:
             tool, points = TOOLS[key], []
-        elif key == 13 and tool and tool != "line_crossing" and len(points) >= 3:  # Enter
-            finish()
+            need = "click 2 points" if tool == "line_crossing" else "click 3+ points, then Enter"
+            print(f"Drawing {TITLES[tool]}: {need}")
+        elif key == 13 and tool and tool != "line_crossing":  # Enter
+            if len(points) >= 3:
+                finish()
+            else:
+                print(f"  need at least 3 points (have {len(points)})")
         elif key == ord("u") and points:
             points.pop()
         elif key == 27:  # Esc

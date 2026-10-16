@@ -2,7 +2,8 @@
 
 Geometry is stored normalized (0..1) so rules survive resolution changes; it is scaled to
 pixels on the first frame of each size. Objects are located by their bottom-center point
-(where a person's feet touch the ground), which is what a zone drawn on the floor means.
+(where a person's feet touch the ground), which is what a zone drawn on the floor means;
+see object_positions for the cut-off-at-frame-edge fallback.
 """
 
 import json
@@ -117,13 +118,12 @@ class RuleEngine:
             return []
 
         names = np.array([COCO_CLASSES.get(int(c), str(c)) for c in detections.class_id])
+        positions = object_positions(detections, height)
         hits: list[RuleHit] = []
         for state in self._states:
             mask = np.isin(names, list(state.rule.classes)) if len(names) else np.zeros(0, bool)
-            dets = detections[mask]
-            dnames = names[mask]
             handler = getattr(self, f"_{state.rule.type}")
-            hits.extend(handler(state, dets, dnames, now))
+            hits.extend(handler(state, detections[mask], positions[mask], names[mask], now))
         return hits
 
     @staticmethod
@@ -139,8 +139,11 @@ class RuleEngine:
             details=details,
         )
 
-    def _zone_entry(self, state, dets, names, now):
-        in_zone = state.zone.trigger(dets) if len(dets) else np.zeros(0, bool)
+    # Handlers get `dets` (real boxes, reported in events) and `pos` (one point per object,
+    # used for all zone/line geometry; see object_positions).
+
+    def _zone_entry(self, state, dets, pos, names, now):
+        in_zone = state.zone.trigger(pos) if len(dets) else np.zeros(0, bool)
         current = {int(t) for t, inside in zip(dets.tracker_id, in_zone) if inside}
         hits = []
         for i, (tid, inside) in enumerate(zip(dets.tracker_id, in_zone)):
@@ -150,11 +153,11 @@ class RuleEngine:
         state.inside = current
         return hits
 
-    def _line_crossing(self, state, dets, names, now):
+    def _line_crossing(self, state, dets, pos, names, now):
         if not len(dets):
-            state.line.trigger(dets)  # age crossing history
+            state.line.trigger(pos)  # age crossing history
             return []
-        crossed_in, crossed_out = state.line.trigger(dets)
+        crossed_in, crossed_out = state.line.trigger(pos)
         hits = []
         for i in range(len(dets)):
             for crossed, direction in ((crossed_in[i], "in"), (crossed_out[i], "out")):
@@ -164,8 +167,8 @@ class RuleEngine:
                     hits.append(self._hit(state, "line_crossing", now, dets, names, i, direction=direction))
         return hits
 
-    def _loitering(self, state, dets, names, now):
-        in_zone = state.zone.trigger(dets) if len(dets) else np.zeros(0, bool)
+    def _loitering(self, state, dets, pos, names, now):
+        in_zone = state.zone.trigger(pos) if len(dets) else np.zeros(0, bool)
         current = set()
         hits = []
         for i, (tid, inside) in enumerate(zip(dets.tracker_id, in_zone)):
@@ -186,8 +189,8 @@ class RuleEngine:
                 state.loiter_reported.discard(tid)
         return hits
 
-    def _occupancy(self, state, dets, names, now):
-        in_zone = state.zone.trigger(dets) if len(dets) else np.zeros(0, bool)
+    def _occupancy(self, state, dets, pos, names, now):
+        in_zone = state.zone.trigger(pos) if len(dets) else np.zeros(0, bool)
         count = int(in_zone.sum())
         if count <= state.rule.max_count:
             state.over_capacity = False  # re-arm once occupancy drops back
@@ -200,6 +203,26 @@ class RuleEngine:
         hit = self._hit(state, "occupancy_exceeded", now, dets, names, best, count=count, max_count=state.rule.max_count)
         hit.track_id, hit.details["track_ids"] = None, [int(dets.tracker_id[j]) for j in idx]
         return [hit]
+
+
+def object_positions(detections: sv.Detections, frame_height: int, edge: float = 0.02) -> sv.Detections:
+    """Where each object "is" on the floor plan, as zero-size boxes.
+
+    Normally the bottom-center of the box (feet). If the box is cut off by the bottom of the
+    frame the feet are not visible, so fall back to the box center instead of pinning the
+    object to the frame edge. Zero-size boxes let PolygonZone/LineZone use this point as-is.
+    """
+    xyxy = detections.xyxy
+    x = (xyxy[:, 0] + xyxy[:, 2]) / 2
+    clipped = xyxy[:, 3] >= frame_height * (1 - edge)
+    y = np.where(clipped, (xyxy[:, 1] + xyxy[:, 3]) / 2, xyxy[:, 3])
+    points = np.stack([x, y, x, y], axis=1) if len(xyxy) else np.empty((0, 4), np.float32)
+    return sv.Detections(
+        xyxy=points.astype(np.float32),
+        confidence=detections.confidence,
+        class_id=detections.class_id,
+        tracker_id=detections.tracker_id,
+    )
 
 
 class RulesFile:
