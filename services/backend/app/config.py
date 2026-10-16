@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     service_token: str
 
     event_storage_path: Path = REPO_ROOT / "storage" / "events"
+    # Built dashboard to serve at "/" (defaults to apps/web/dist in the repo).
+    web_dist: Path | None = None
+    # Hourly cleanup of old events/snapshots/count samples (disabled in tests).
+    run_retention: bool = True
+    session_hours: int = 12
+    # Set true when the dashboard is served over HTTPS (remote access).
+    cookie_secure: bool = False
     # Dashboard origins allowed to call the API from the browser.
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
 

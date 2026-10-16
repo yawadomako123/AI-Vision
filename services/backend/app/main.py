@@ -1,35 +1,103 @@
 """AI Vision Edge API.
 
     uv run alembic upgrade head
-    uv run uvicorn app.main:app --reload --port 8000
+    uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-Docs at http://localhost:8000/docs
+Docs at http://127.0.0.1:8000/docs
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.auth import current_user, websocket_user
 from app.config import REPO_ROOT, settings
-from app.live import hub
-from app.routes import analytics, cameras, events, internal
+from sqlalchemy.orm import Session
 
-app = FastAPI(title="AI Vision Edge API", version="0.1.0")
+from app.db import SessionLocal, get_db
+from app.live import hub
+from app.models import User
+from app.retention import run_retention
+from app.routes import analytics, auth, cameras, events, internal, rules, users
+
+log = logging.getLogger(__name__)
+RETENTION_INTERVAL_SECONDS = 3600
+
+
+def _retention_once() -> None:
+    with SessionLocal() as db:
+        run_retention(db, settings.event_storage_path)
+
+
+async def _retention_loop() -> None:
+    while True:
+        try:
+            await run_in_threadpool(_retention_once)
+        except Exception:  # noqa: BLE001 - never let housekeeping kill the API
+            log.exception("retention run failed")
+        await asyncio.sleep(RETENTION_INTERVAL_SECONDS)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    task = asyncio.create_task(_retention_loop()) if settings.run_retention else None
+    yield
+    if task:
+        task.cancel()
+
+
+app = FastAPI(title="AI Vision Edge API", version="0.2.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(cameras.router)
-app.include_router(events.router)
-app.include_router(analytics.router)
-app.include_router(internal.router)
+for module in (auth, users, cameras, rules, events, analytics, internal):
+    app.include_router(module.router)
 
 settings.event_storage_path.mkdir(parents=True, exist_ok=True)
-app.mount("/media/events", StaticFiles(directory=settings.event_storage_path), name="event-media")
+MEDIA_ROOT = settings.event_storage_path.resolve()
+
+
+@app.get("/media/events/{path:path}", include_in_schema=False)
+def event_media(path: str, _: User = Depends(current_user)):
+    """Snapshots are evidence: only logged-in operators may fetch them."""
+    file = (MEDIA_ROOT / path).resolve()
+    if not file.is_relative_to(MEDIA_ROOT) or not file.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+    return FileResponse(file, headers={"Cache-Control": "private, max-age=86400"})
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.websocket("/api/ws")
+async def live_updates(ws: WebSocket, db: Session = Depends(get_db)):
+    user = await run_in_threadpool(websocket_user, ws, db)
+    db.close()  # only needed for the handshake
+    if user is None:
+        await ws.close(code=4401)  # app-defined: not logged in
+        return
+    await hub.connect(ws)
+    try:
+        while True:
+            await ws.receive_text()  # keep-alive; clients don't need to send anything
+    except WebSocketDisconnect:
+        pass
+    finally:
+        hub.disconnect(ws)
 
 
 class SPAStaticFiles(StaticFiles):
@@ -45,25 +113,8 @@ class SPAStaticFiles(StaticFiles):
             raise
 
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-
-@app.websocket("/api/ws")
-async def live_updates(ws: WebSocket):
-    await hub.connect(ws)
-    try:
-        while True:
-            await ws.receive_text()  # keep-alive; clients don't need to send anything
-    except WebSocketDisconnect:
-        pass
-    finally:
-        hub.disconnect(ws)
-
-
 # Production: the built dashboard (apps/web/dist) on the same origin. Mounted last so API
 # routes win. In development use the Vite dev server instead (npm run dev).
-WEB_DIST = REPO_ROOT / "apps" / "web" / "dist"
+WEB_DIST = settings.web_dist or (REPO_ROOT / "apps" / "web" / "dist")
 if WEB_DIST.is_dir():
     app.mount("/", SPAStaticFiles(directory=WEB_DIST, html=True), name="web")

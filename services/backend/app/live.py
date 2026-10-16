@@ -41,3 +41,7 @@ class LiveHub:
 
 
 hub = LiveHub()
+
+# Last time the vision worker talked to the API (system health). Process-local is fine:
+# there is one API process per edge box.
+worker_contact: dict = {}

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 EventStatus = Literal["unreviewed", "acknowledged", "resolved", "false_alarm"]
 STREAM_SCHEMES = ("rtsp://", "rtsps://", "http://", "https://")
@@ -119,6 +119,152 @@ class EventUpdate(BaseModel):
 class EventPage(BaseModel):
     total: int
     items: list[EventOut]
+
+
+# --- Rules -------------------------------------------------------------------
+
+RuleType = Literal["zone_entry", "line_crossing", "loitering", "occupancy"]
+DetectClass = Literal["person", "bicycle", "car", "motorcycle", "bus", "truck"]
+Point = tuple[float, float]
+
+
+def _check_points(rule_type: str, points: list[Point]) -> list[Point]:
+    for x, y in points:
+        if not (0 <= x <= 1 and 0 <= y <= 1):
+            raise ValueError("points must be normalized: 0 <= x, y <= 1")
+    if rule_type == "line_crossing" and len(points) != 2:
+        raise ValueError("a line needs exactly 2 points")
+    if rule_type != "line_crossing" and not 3 <= len(points) <= 50:
+        raise ValueError("a zone needs 3 to 50 points")
+    return points
+
+
+class RuleBase(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    classes: list[DetectClass] = Field(default=["person"], min_length=1)
+    severity: Literal["high", "medium", "low"] = "medium"
+    cooldown_seconds: float = Field(default=30, ge=0, le=86400)
+    direction: Literal["in", "out", "both"] = "both"
+    dwell_seconds: float = Field(default=20, ge=1, le=86400)
+    max_count: int = Field(default=3, ge=0, le=1000)
+    enabled: bool = True
+
+
+class RuleCreate(RuleBase):
+    type: RuleType
+    points: list[Point]
+
+    @model_validator(mode="after")
+    def _points(self):
+        _check_points(self.type, self.points)
+        return self
+
+
+class RuleUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    points: list[Point] | None = None
+    classes: list[DetectClass] | None = Field(default=None, min_length=1)
+    severity: Literal["high", "medium", "low"] | None = None
+    cooldown_seconds: float | None = Field(default=None, ge=0, le=86400)
+    direction: Literal["in", "out", "both"] | None = None
+    dwell_seconds: float | None = Field(default=None, ge=1, le=86400)
+    max_count: int | None = Field(default=None, ge=0, le=1000)
+    enabled: bool | None = None
+
+
+class RuleOut(RuleBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    camera_id: int
+    type: RuleType
+    points: list[Point]
+
+
+# --- Analytics & settings ----------------------------------------------------
+
+class CountSampleIn(BaseModel):
+    camera_id: int
+    bucket_start: datetime
+    class_name: str = Field(max_length=60)
+    avg_count: float = Field(ge=0)
+    max_count: int = Field(ge=0)
+
+
+class SettingsOut(BaseModel):
+    event_retention_days: int
+    count_retention_days: int
+
+
+class SettingsUpdate(BaseModel):
+    event_retention_days: int | None = Field(default=None, ge=1, le=3650)
+    count_retention_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+# --- Auth & users ------------------------------------------------------------
+
+Role = Literal["admin", "operator"]
+USERNAME_PATTERN = r"^[A-Za-z0-9_.@-]{3,60}$"
+
+
+class LoginIn(BaseModel):
+    username: str = Field(max_length=60)
+    password: str = Field(max_length=200)
+
+
+class SetupIn(BaseModel):
+    username: str = Field(pattern=USERNAME_PATTERN)
+    password: str = Field(min_length=10, max_length=200)
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    role: Role
+    active: bool
+    created_at: datetime
+    last_login_at: datetime | None
+
+
+class AuthStatus(BaseModel):
+    setup_required: bool
+    user: UserOut | None
+
+
+class UserCreate(BaseModel):
+    username: str = Field(pattern=USERNAME_PATTERN)
+    password: str = Field(min_length=10, max_length=200)
+    role: Role = "operator"
+
+
+class UserUpdate(BaseModel):
+    role: Role | None = None
+    active: bool | None = None
+    password: str | None = Field(default=None, min_length=10, max_length=200)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(max_length=200)
+    new_password: str = Field(min_length=10, max_length=200)
+
+
+class AuditOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    at: datetime
+    username: str | None
+    action: str
+    target: str | None
+    detail: dict
+    ip: str | None
+
+
+class AuditPage(BaseModel):
+    total: int
+    items: list[AuditOut]
 
 
 # --- Worker status -----------------------------------------------------------

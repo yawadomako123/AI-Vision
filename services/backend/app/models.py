@@ -59,3 +59,83 @@ class Event(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     camera: Mapped[Camera] = relationship(back_populates="events")
+
+
+class DetectionRule(Base):
+    """Zone / line rule for one camera. Geometry is normalized (0..1) so it survives resolution changes."""
+
+    __tablename__ = "detection_rules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"), index=True)
+    type: Mapped[str] = mapped_column(String(30))  # zone_entry | line_crossing | loitering | occupancy
+    name: Mapped[str] = mapped_column(String(120))
+    points: Mapped[list] = mapped_column(JSON)
+    classes: Mapped[list] = mapped_column(JSON, default=lambda: ["person"])
+    severity: Mapped[str] = mapped_column(String(20), default="medium")
+    cooldown_seconds: Mapped[float] = mapped_column(Float, default=30)
+    direction: Mapped[str] = mapped_column(String(10), default="both")
+    dwell_seconds: Mapped[float] = mapped_column(Float, default=20)
+    max_count: Mapped[int] = mapped_column(default=3)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class CountSample(Base):
+    """Per-minute object counts reported by the worker (people/vehicle analytics)."""
+
+    __tablename__ = "count_samples"
+    __table_args__ = (Index("ix_counts_camera_bucket", "camera_id", "bucket_start"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"))
+    bucket_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    class_name: Mapped[str] = mapped_column(String(60))
+    avg_count: Mapped[float] = mapped_column(Float)
+    max_count: Mapped[int]
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(60), unique=True)
+    password_hash: Mapped[str] = mapped_column(Text)
+    role: Mapped[str] = mapped_column(String(20), default="operator")  # admin | operator
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class UserSession(Base):
+    """Server-side sessions, so logout and deactivating a user take effect immediately."""
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # sha256 of the cookie value
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped[User] = relationship()
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    username: Mapped[str | None] = mapped_column(String(60))
+    action: Mapped[str] = mapped_column(String(60), index=True)
+    target: Mapped[str | None] = mapped_column(String(120))
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    ip: Mapped[str | None] = mapped_column(String(64))
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON)

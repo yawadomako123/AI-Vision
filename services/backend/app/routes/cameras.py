@@ -1,13 +1,15 @@
 import av
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.crypto import decrypt, encrypt
+from app.audit import audit
+from app.auth import current_user, require_admin
+from app.crypto import decrypt, encrypt, mask_url
 from app.db import get_db
 from app.live import hub
-from app.models import Camera
+from app.models import Camera, User
 from app.schemas import CameraCreate, CameraOut, CameraTestResult, CameraUpdate
 from app.serializers import camera_out
 
@@ -29,18 +31,24 @@ def _commit(db: Session) -> None:
         raise HTTPException(status.HTTP_409_CONFLICT, "a camera with that name already exists")
 
 
+def _open(url: str):
+    return av.open(url, options={"rtsp_transport": "tcp"}, timeout=(5.0, 5.0))
+
+
 @router.get("", response_model=list[CameraOut])
-def list_cameras(db: Session = Depends(get_db)):
+def list_cameras(_: User = Depends(current_user), db: Session = Depends(get_db)):
     return [camera_out(c) for c in db.scalars(select(Camera).order_by(Camera.id))]
 
 
 @router.post("", response_model=CameraOut, status_code=status.HTTP_201_CREATED)
-def create_camera(body: CameraCreate, db: Session = Depends(get_db)):
+def create_camera(body: CameraCreate, request: Request, admin: User = Depends(require_admin),
+                  db: Session = Depends(get_db)):
     camera = Camera(
         name=body.name, location=body.location, enabled=body.enabled,
         stream_url_encrypted=encrypt(body.stream_url),
     )
     db.add(camera)
+    audit(db, request, admin, "camera.create", f"camera:{body.name}", stream=mask_url(body.stream_url))
     _commit(db)
     out = camera_out(camera)
     hub.broadcast_from_sync("camera", out.model_dump())
@@ -48,18 +56,23 @@ def create_camera(body: CameraCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{camera_id}", response_model=CameraOut)
-def get_camera(camera_id: int, db: Session = Depends(get_db)):
+def get_camera(camera_id: int, _: User = Depends(current_user), db: Session = Depends(get_db)):
     return camera_out(_get(db, camera_id))
 
 
 @router.patch("/{camera_id}", response_model=CameraOut)
-def update_camera(camera_id: int, body: CameraUpdate, db: Session = Depends(get_db)):
+def update_camera(camera_id: int, body: CameraUpdate, request: Request, admin: User = Depends(require_admin),
+                  db: Session = Depends(get_db)):
     camera = _get(db, camera_id)
     changes = body.model_dump(exclude_unset=True)
+    logged = {k: v for k, v in changes.items() if k != "stream_url"}
     if "stream_url" in changes:
-        camera.stream_url_encrypted = encrypt(changes.pop("stream_url"))
+        url = changes.pop("stream_url")
+        camera.stream_url_encrypted = encrypt(url)
+        logged["stream"] = mask_url(url)
     for field, value in changes.items():
         setattr(camera, field, value)
+    audit(db, request, admin, "camera.update", f"camera:{camera.name}", **logged)
     _commit(db)
     out = camera_out(camera)
     hub.broadcast_from_sync("camera", out.model_dump())
@@ -67,22 +80,44 @@ def update_camera(camera_id: int, body: CameraUpdate, db: Session = Depends(get_
 
 
 @router.delete("/{camera_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_camera(camera_id: int, db: Session = Depends(get_db)):
-    db.delete(_get(db, camera_id))
+def delete_camera(camera_id: int, request: Request, admin: User = Depends(require_admin),
+                  db: Session = Depends(get_db)):
+    camera = _get(db, camera_id)
+    audit(db, request, admin, "camera.delete", f"camera:{camera.name}")
+    db.delete(camera)
     db.commit()
     hub.broadcast_from_sync("camera_deleted", {"id": camera_id})
 
 
+def _redact(exc: Exception, url: str) -> str:
+    # Never echo the URL back: FFmpeg errors can include it, with the password.
+    return str(exc).replace(url, "<stream>")[:300]
+
+
 @router.post("/{camera_id}/test", response_model=CameraTestResult)
-def test_camera(camera_id: int, db: Session = Depends(get_db)):
+def test_camera(camera_id: int, _: User = Depends(current_user), db: Session = Depends(get_db)):
     """Try to open the stream and decode one frame (5 s timeout)."""
     url = decrypt(_get(db, camera_id).stream_url_encrypted)
     try:
-        with av.open(url, options={"rtsp_transport": "tcp"}, timeout=(5.0, 5.0)) as container:
+        with _open(url) as container:
             stream = container.streams.video[0]
             frame = next(container.decode(stream))
             return CameraTestResult(ok=True, width=frame.width, height=frame.height, codec=stream.codec_context.name)
     except Exception as exc:  # noqa: BLE001
-        # Never echo the URL back: FFmpeg errors can include it, with the password.
-        message = str(exc).replace(url, "<stream>")
-        return CameraTestResult(ok=False, error=message[:300])
+        return CameraTestResult(ok=False, error=_redact(exc, url))
+
+
+@router.get("/{camera_id}/frame", responses={200: {"content": {"image/jpeg": {}}}})
+def camera_frame(camera_id: int, _: User = Depends(current_user), db: Session = Depends(get_db)):
+    """One current JPEG frame, e.g. as the background for drawing rules."""
+    url = decrypt(_get(db, camera_id).stream_url_encrypted)
+    try:
+        with _open(url) as container:
+            frame = next(container.decode(container.streams.video[0]))
+            import io
+
+            buf = io.BytesIO()
+            frame.to_image().save(buf, format="JPEG", quality=85)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"could not grab a frame: {_redact(exc, url)}")
+    return Response(buf.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})

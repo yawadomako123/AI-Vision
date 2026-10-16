@@ -1,6 +1,7 @@
 """Endpoints for the vision worker only, guarded by the shared service token."""
 
 import secrets
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select
@@ -9,15 +10,16 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.crypto import decrypt
 from app.db import get_db
-from app.live import hub
-from app.models import Camera, Event
-from app.schemas import CameraStatusIn, EventIn, EventOut, InternalCamera
+from app.live import hub, worker_contact
+from app.models import Camera, CountSample, DetectionRule, Event
+from app.schemas import CameraStatusIn, CountSampleIn, EventIn, EventOut, InternalCamera, RuleOut
 from app.serializers import event_out
 
 
 def require_service_token(x_service_token: str = Header(default="")) -> None:
     if not secrets.compare_digest(x_service_token, settings.service_token):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid service token")
+    worker_contact["at"] = datetime.now(timezone.utc)
 
 
 router = APIRouter(prefix="/api/internal", tags=["internal"], dependencies=[Depends(require_service_token)])
@@ -29,6 +31,22 @@ def worker_cameras(db: Session = Depends(get_db)):
         InternalCamera(id=c.id, name=c.name, stream_url=decrypt(c.stream_url_encrypted), enabled=c.enabled)
         for c in db.scalars(select(Camera).order_by(Camera.id))
     ]
+
+
+@router.get("/rules", response_model=dict[int, list[RuleOut]])
+def worker_rules(db: Session = Depends(get_db)):
+    """Enabled rules grouped by camera id."""
+    grouped: dict[int, list[RuleOut]] = {}
+    for rule in db.scalars(select(DetectionRule).where(DetectionRule.enabled).order_by(DetectionRule.id)):
+        grouped.setdefault(rule.camera_id, []).append(RuleOut.model_validate(rule))
+    return grouped
+
+
+@router.post("/counts", status_code=status.HTTP_204_NO_CONTENT)
+def ingest_counts(samples: list[CountSampleIn], db: Session = Depends(get_db)):
+    known = set(db.scalars(select(Camera.id)))
+    db.add_all(CountSample(**s.model_dump()) for s in samples if s.camera_id in known)
+    db.commit()
 
 
 @router.post("/cameras/{camera_id}/status", status_code=status.HTTP_204_NO_CONTENT)
