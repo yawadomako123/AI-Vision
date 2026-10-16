@@ -17,3 +17,4 @@ config/*.tmp
 storage/*
 !storage/.gitkeep
 *.log
+*.tsbuildinfo
