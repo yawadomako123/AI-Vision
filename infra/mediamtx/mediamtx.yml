@@ -1,0 +1,51 @@
+# MediaMTX: the single connection point for every camera.
+# Phones (Larix Broadcaster) and fake cameras (scripts/fake-cameras.ps1) PUBLISH here;
+# the vision worker and the browser READ from here.
+#
+#   Publish:  rtsp://<laptop-ip>:8554/cam1   (user: publisher / pass: see below)
+#   Read:     rtsp://localhost:8554/cam1
+#   Browser:  http://localhost:8889/cam1     (WebRTC player)
+
+logLevel: info
+
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp, udp]
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+# Lets the browser on this laptop reach WebRTC when MediaMTX runs inside Docker.
+webrtcAdditionalHosts: [127.0.0.1, localhost]
+
+hls: yes
+hlsAddress: :8888
+
+rtmp: no
+srt: no
+moq: no
+api: no
+
+# Anyone on the LAN can READ; only someone with the password can PUBLISH.
+# Change the publish password before using this outside your own network.
+authInternalUsers:
+  - user: any
+    ips: []
+    permissions:
+      - action: read
+      - action: playback
+  - user: publisher
+    pass: changeme-publish
+    ips: []
+    permissions:
+      - action: publish
+
+paths:
+  # Real IP cameras later: uncomment and MediaMTX will pull the camera once
+  # and fan it out to the vision worker and the dashboard.
+  # cam5:
+  #   source: rtsp://user:pass@192.168.1.50:554/stream2
+  #   sourceOnDemand: no
+
+  # cam1..cam4 (and anything else) accept a publisher (phone or fake camera).
+  all_others:

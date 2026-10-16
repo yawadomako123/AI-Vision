@@ -1,0 +1,41 @@
+from pathlib import Path
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=REPO_ROOT / ".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    # Comma-separated RTSP URLs or file paths, e.g. "rtsp://localhost:8554/cam1,samples/door.mp4"
+    camera_sources: str = "rtsp://localhost:8554/cam1"
+
+    model_path: Path = REPO_ROOT / "models" / "rfdetr-nano.onnx"
+    # OpenVINO device: GPU (Intel iGPU), CPU, or AUTO. Falls back to plain CPU if unavailable.
+    inference_device: str = "GPU"
+    inference_fps: float = 3.0
+    detection_confidence: float = 0.4
+    # COCO class names to keep; everything else is discarded before tracking.
+    detect_classes: str = "person,bicycle,car,motorcycle,bus,truck"
+
+    event_storage_path: Path = REPO_ROOT / "storage" / "events"
+
+    @field_validator("model_path", "event_storage_path")
+    @classmethod
+    def _repo_relative(cls, p: Path) -> Path:
+        return p if p.is_absolute() else REPO_ROOT / p
+
+    @property
+    def sources(self) -> list[str]:
+        return [s.strip() for s in self.camera_sources.split(",") if s.strip()]
+
+    @property
+    def classes(self) -> set[str]:
+        return {c.strip() for c in self.detect_classes.split(",") if c.strip()}
+
+
+settings = Settings()

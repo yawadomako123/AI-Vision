@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+node_modules/
+dist/
+coverage/
+models/*
+!models/.gitkeep
+samples/*
+!samples/.gitkeep
+storage/*
+!storage/.gitkeep
+*.log

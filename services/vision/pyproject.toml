@@ -1,0 +1,26 @@
+[project]
+name = "aivision-vision"
+version = "0.1.0"
+description = "AI Vision Edge - local vision worker (ingest, detect, track, rules)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "av",                      # PyAV: FFmpeg bindings for RTSP/file ingest
+    "numpy",
+    "opencv-python",           # resize/draw + --show preview; use -headless in containers
+    "openvino",                # Intel CPU/iGPU inference; reads the ONNX model directly
+    "onnxruntime",             # portable CPU fallback (swap for onnxruntime-gpu on NVIDIA boxes)
+    "supervision",             # ByteTrack, PolygonZone, LineZone (MIT)
+    "pydantic-settings",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+# Only needed once, to download RF-DETR (Apache-2.0) and export it to ONNX.
+export = ["rfdetr", "onnx", "onnxscript", "onnxsim"]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
