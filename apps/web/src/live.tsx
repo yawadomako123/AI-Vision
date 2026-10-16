@@ -1,0 +1,94 @@
+import { useQueryClient } from "@tanstack/react-query";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+
+import type { Camera, VisionEvent } from "./api";
+
+export type LiveState = "connecting" | "live" | "reconnecting";
+
+interface LiveContextValue {
+  state: LiveState;
+  /** Subscribe to newly created events; returns an unsubscribe function. */
+  onEvent: (fn: (e: VisionEvent) => void) => () => void;
+}
+
+const LiveContext = createContext<LiveContextValue>({ state: "connecting", onEvent: () => () => {} });
+
+/** One WebSocket for the whole app; keeps React Query caches fresh from server pushes. */
+export function LiveProvider({ children }: { children: ReactNode }) {
+  const qc = useQueryClient();
+  const [state, setState] = useState<LiveState>("connecting");
+  const listeners = useRef(new Set<(e: VisionEvent) => void>());
+
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let retryMs = 1000;
+    let timer: number | undefined;
+    let disposed = false;
+
+    const connect = () => {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}/api/ws`);
+
+      ws.onopen = () => {
+        setState("live");
+        retryMs = 1000;
+        qc.invalidateQueries(); // catch up on anything missed while disconnected
+      };
+
+      ws.onmessage = (msg) => {
+        const { type, data } = JSON.parse(msg.data);
+        switch (type) {
+          case "event":
+            listeners.current.forEach((fn) => fn(data as VisionEvent));
+            qc.invalidateQueries({ queryKey: ["events"] });
+            qc.invalidateQueries({ queryKey: ["summary"] });
+            break;
+          case "event_updated":
+            qc.invalidateQueries({ queryKey: ["events"] });
+            qc.invalidateQueries({ queryKey: ["summary"] });
+            break;
+          case "camera_status":
+            // Patch the badge instantly, then refetch for fields the push doesn't carry (fps).
+            qc.setQueryData<Camera[]>(["cameras"], (old) =>
+              old?.map((c) => (c.id === data.id ? { ...c, status: data.status, last_seen_at: data.last_seen_at } : c)),
+            );
+            qc.invalidateQueries({ queryKey: ["cameras"] });
+            qc.invalidateQueries({ queryKey: ["summary"] });
+            break;
+          case "camera":
+          case "camera_deleted":
+            qc.invalidateQueries({ queryKey: ["cameras"] });
+            qc.invalidateQueries({ queryKey: ["summary"] });
+            break;
+        }
+      };
+
+      ws.onclose = () => {
+        if (disposed) return;
+        setState("reconnecting");
+        timer = window.setTimeout(connect, retryMs);
+        retryMs = Math.min(retryMs * 2, 15000);
+      };
+    };
+
+    connect();
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      ws?.close();
+    };
+  }, [qc]);
+
+  const onEvent = useCallback((fn: (e: VisionEvent) => void) => {
+    listeners.current.add(fn);
+    return () => {
+      listeners.current.delete(fn);
+    };
+  }, []);
+  const value = useMemo(() => ({ state, onEvent }), [state, onEvent]);
+  return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
+}
+
+export function useLive() {
+  return useContext(LiveContext);
+}

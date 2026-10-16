@@ -19,6 +19,7 @@ real IP camera (later, pulled) ───────┘          └──WebRTC
 | Stream server | MediaMTX 1.21.2 | MIT |
 | API | FastAPI, SQLAlchemy 2, Alembic | MIT |
 | Database | PostgreSQL 17 | PostgreSQL License |
+| Dashboard | Vite, React, TypeScript, Tailwind CSS, TanStack Query | MIT |
 
 ## One-time setup
 
@@ -33,7 +34,7 @@ uv sync
 uv run alembic upgrade head # create/upgrade database tables
 ```
 
-## Daily run (3 terminals)
+## Daily run (2 terminals)
 
 ```powershell
 docker compose up -d                                                   # if not already running
@@ -41,7 +42,19 @@ cd services\backend; uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 cd services\vision;  uv run python -m app.main --show
 ```
 
-API docs (try every endpoint in the browser): <http://127.0.0.1:8000/docs>
+Open the dashboard at **<http://127.0.0.1:8000>** (FastAPI serves the built dashboard from `apps/web/dist`).
+API docs: <http://127.0.0.1:8000/docs>
+
+### Dashboard development
+
+```powershell
+cd apps\web
+npm install
+npm run dev      # http://localhost:5173, hot reload; proxies /api and /media to the API on :8000
+npm run build    # rebuild apps/web/dist so http://127.0.0.1:8000 serves the latest version
+```
+
+Pages: **Overview** (camera health, events in the last 24 h, recent events), **Events** (filter, open a snapshot, acknowledge / resolve / mark as false alarm with a note), **Cameras** (add, edit, test connection, enable/disable, delete, and live video for streams that go through MediaMTX). Everything updates live over a WebSocket; new events also pop up as notifications.
 
 Add a camera (the worker picks it up within 10 s):
 
@@ -156,5 +169,6 @@ One JSON line per camera per second:
 
 ## Next milestones
 
-1. Dashboard (Vite + React): overview, cameras, events review with live updates.
-2. Operator login, rules stored in the database and drawn in the dashboard.
+1. Operator login (the API and dashboard are currently open to anyone who can reach 127.0.0.1).
+2. Rules stored in the database and drawn in the dashboard instead of `draw_rules`.
+3. Retention (auto-delete old snapshots/events), analytics trends, CSV export.

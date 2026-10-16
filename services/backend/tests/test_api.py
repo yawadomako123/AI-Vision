@@ -21,6 +21,12 @@ def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
 
 
+def test_unknown_api_path_is_404_not_dashboard(client):
+    r = client.get("/api/does-not-exist")
+    assert r.status_code == 404
+    assert "text/html" not in r.headers.get("content-type", "")
+
+
 # --- cameras -----------------------------------------------------------------
 
 def test_camera_password_is_masked_everywhere_public(client, camera):

@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+/* Design tokens: raw light/dark values, resolved per color scheme.
+   light-dark() where supported, prefers-color-scheme as the fallback. */
+:root {
+  --bg-light: #f4f5f7;
+  --bg-dark: #0b0f14;
+  --surface-light: #ffffff;
+  --surface-dark: #131a22;
+  --surface-2-light: #f0f2f5;
+  --surface-2-dark: #1a222c;
+  --border-light: #dfe3e8;
+  --border-dark: #263140;
+  --text-light: #111827;
+  --text-dark: #e6edf3;
+  --muted-light: #5b6573;
+  --muted-dark: #8b98a9;
+  --accent-light: #2563eb;
+  --accent-dark: #5b9bff;
+  --ok-light: #15803d;
+  --ok-dark: #3fcf74;
+  --warn-light: #b45309;
+  --warn-dark: #f2b13d;
+  --bad-light: #c42b2b;
+  --bad-dark: #ff6b6b;
+
+  --bg: var(--bg-light);
+  --surface: var(--surface-light);
+  --surface-2: var(--surface-2-light);
+  --border: var(--border-light);
+  --text: var(--text-light);
+  --muted: var(--muted-light);
+  --accent: var(--accent-light);
+  --ok: var(--ok-light);
+  --warn: var(--warn-light);
+  --bad: var(--bad-light);
+
+  @media (prefers-color-scheme: dark) {
+    --bg: var(--bg-dark);
+    --surface: var(--surface-dark);
+    --surface-2: var(--surface-2-dark);
+    --border: var(--border-dark);
+    --text: var(--text-dark);
+    --muted: var(--muted-dark);
+    --accent: var(--accent-dark);
+    --ok: var(--ok-dark);
+    --warn: var(--warn-dark);
+    --bad: var(--bad-dark);
+  }
+
+  @supports (color: light-dark(white, black)) {
+    --bg: light-dark(var(--bg-light), var(--bg-dark));
+    --surface: light-dark(var(--surface-light), var(--surface-dark));
+    --surface-2: light-dark(var(--surface-2-light), var(--surface-2-dark));
+    --border: light-dark(var(--border-light), var(--border-dark));
+    --text: light-dark(var(--text-light), var(--text-dark));
+    --muted: light-dark(var(--muted-light), var(--muted-dark));
+    --accent: light-dark(var(--accent-light), var(--accent-dark));
+    --ok: light-dark(var(--ok-light), var(--ok-dark));
+    --warn: light-dark(var(--warn-light), var(--warn-dark));
+    --bad: light-dark(var(--bad-light), var(--bad-dark));
+  }
+
+  color-scheme: light dark;
+  accent-color: var(--accent);
+  scrollbar-color: var(--border) transparent;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Modal dialogs (native <dialog> + showModal) */
+dialog:modal {
+  overscroll-behavior: contain;
+  background: var(--surface);
+  color: var(--text);
+}
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.55);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
