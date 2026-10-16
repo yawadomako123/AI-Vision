@@ -102,7 +102,8 @@ class FrameReader:
                 if self._stop.is_set():
                     return
                 if self.status != "offline":
-                    log.warning("[%s] offline: %s", self.camera_id, exc)
+                    # FFmpeg errors echo the URL, which can contain the camera password.
+                    log.warning("[%s] offline: %s", self.camera_id, str(exc).replace(self.source, "<stream>"))
                 self.status = "offline"
                 self.reconnects += 1
                 self._stop.wait(backoff)

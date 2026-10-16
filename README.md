@@ -2,12 +2,12 @@
 
 Local-first AI analytics for IP cameras. See [ai-vision-edge-project.md](ai-vision-edge-project.md) for the full spec.
 
-**Current milestone:** vision worker (ingest → detect → track → zone/line rules → events + snapshots), tested with an Android phone and looping video files as cameras. Everything here is free and runs on this laptop.
+**Current milestone:** vision worker (ingest → detect → track → rules → events) plus the API (camera registry, events, live updates), tested with an Android phone and looping video files as cameras. Everything here is free and runs on this laptop.
 
 ```
 Android phone (Larix) ──RTSP publish──┐
-fake-cameras.ps1 (looping clips) ─────┤──> MediaMTX :8554 ──RTSP read──> vision worker (Python)
-real IP camera (later, pulled) ───────┘          └──WebRTC :8889──> browser
+fake-cameras.ps1 (looping clips) ─────┤──> MediaMTX :8554 ──RTSP──> vision worker ──HTTP──> API :8000 ──> PostgreSQL
+real IP camera (later, pulled) ───────┘          └──WebRTC :8889──> browser    (cameras, status, events)   └─WebSocket──> dashboard
 ```
 
 | Piece | Choice | License |
@@ -17,15 +17,55 @@ real IP camera (later, pulled) ───────┘          └──WebRTC
 | Ingest | PyAV (FFmpeg) | BSD |
 | Tracking, zones, lines | supervision (ByteTrack, PolygonZone, LineZone) | MIT |
 | Stream server | MediaMTX 1.21.2 | MIT |
+| API | FastAPI, SQLAlchemy 2, Alembic | MIT |
+| Database | PostgreSQL 17 | PostgreSQL License |
 
 ## One-time setup
 
 ```powershell
-copy .env.example .env
+copy .env.example .env      # then generate CAMERA_SECRET_KEY / SERVICE_TOKEN (commands are in the file)
+docker compose up -d        # MediaMTX + PostgreSQL
 cd services\vision
 uv sync
 uv run --group export python ..\..\scripts\export_model.py nano   # writes models\rfdetr-nano.onnx
+cd ..\backend
+uv sync
+uv run alembic upgrade head # create/upgrade database tables
 ```
+
+## Daily run (3 terminals)
+
+```powershell
+docker compose up -d                                                   # if not already running
+cd services\backend; uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+cd services\vision;  uv run python -m app.main --show
+```
+
+API docs (try every endpoint in the browser): <http://127.0.0.1:8000/docs>
+
+Add a camera (the worker picks it up within 10 s):
+
+```powershell
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/cameras -ContentType application/json `
+  -Body '{"name": "Phone (Larix)", "stream_url": "rtsp://127.0.0.1:8554/cam1"}'
+```
+
+Rules in `config/rules.json` are keyed by `cam<camera id>` (camera id 1 = `cam1`).
+
+## API overview
+
+| Endpoint | Purpose |
+|---|---|
+| `GET/POST /api/cameras`, `GET/PATCH/DELETE /api/cameras/{id}` | Camera registry. Stream URLs are encrypted at rest; passwords are masked (`***`) in every response |
+| `POST /api/cameras/{id}/test` | Try to connect and decode one frame |
+| `GET /api/events?camera_id=&event_type=&status=&severity=&since=&until=&limit=&offset=` | Event list, newest first |
+| `GET/PATCH /api/events/{id}` | Event detail; review with `{"status": "acknowledged" \| "resolved" \| "false_alarm", "note": ..., "reviewed_by": ...}` |
+| `GET /api/analytics/summary?hours=24` | Camera status counts, events by type, unreviewed count |
+| `GET /media/events/<path>` | Event snapshots |
+| `WS /api/ws` | Live push: `event`, `event_updated`, `camera`, `camera_status`, `camera_deleted` |
+| `/api/internal/*` | Worker only (`X-Service-Token` header): camera list with real URLs, status heartbeats, event ingest |
+
+The worker also runs without the API: leave `API_BASE_URL` empty and it uses `CAMERA_SOURCES` and only writes `storage/events/`.
 
 ## 1. Benchmark this laptop
 
@@ -116,5 +156,5 @@ One JSON line per camera per second:
 
 ## Next milestones
 
-1. FastAPI + PostgreSQL: camera registry, event API, WebSocket.
-2. React dashboard: overview, cameras (zone drawing), events.
+1. Dashboard (Vite + React): overview, cameras, events review with live updates.
+2. Operator login, rules stored in the database and drawn in the dashboard.

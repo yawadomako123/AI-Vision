@@ -11,7 +11,11 @@ class Settings(BaseSettings):
         env_file=REPO_ROOT / ".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # Comma-separated RTSP URLs or file paths, e.g. "rtsp://localhost:8554/cam1,samples/door.mp4"
+    # API mode: cameras come from the API and events are sent to it.
+    api_base_url: str = ""
+    service_token: str = ""
+    camera_refresh_seconds: float = 10.0
+    # Standalone mode (no API_BASE_URL): comma-separated RTSP URLs or file paths.
     camera_sources: str = "rtsp://localhost:8554/cam1"
 
     model_path: Path = REPO_ROOT / "models" / "rfdetr-nano.onnx"

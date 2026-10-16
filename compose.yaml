@@ -16,7 +16,6 @@ services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
-    profiles: ["db"]   # not needed until the API exists: docker compose --profile db up -d
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-aivision}
       POSTGRES_USER: ${POSTGRES_USER:-aivision}

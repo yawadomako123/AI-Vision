@@ -1,0 +1,25 @@
+[project]
+name = "aivision-backend"
+version = "0.1.0"
+description = "AI Vision Edge - API: camera registry, events, live updates"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy>=2",
+    "alembic",
+    "psycopg[binary]",
+    "pydantic-settings",
+    "cryptography",   # Fernet (authenticated encryption) for camera credentials
+    "av",             # camera connection test
+]
+
+[dependency-groups]
+dev = ["pytest", "httpx"]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
