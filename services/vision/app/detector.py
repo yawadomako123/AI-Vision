@@ -6,6 +6,7 @@ Backends:
 """
 
 import logging
+import os
 from pathlib import Path
 
 import cv2
@@ -68,7 +69,8 @@ class Detector:
 
         core = ov.Core()
         # GPU compilation takes ~1 min the first time; the cache makes later starts take seconds.
-        core.set_property({"CACHE_DIR": str(model_path.parent / ".ov_cache")})
+        cache = os.environ.get("OPENVINO_CACHE_DIR") or str(model_path.parent / ".ov_cache")
+        core.set_property({"CACHE_DIR": cache})
         compiled = core.compile_model(core.read_model(model_path), device, {"PERFORMANCE_HINT": "LATENCY"})
         request = compiled.create_infer_request()
         self.resolution = int(compiled.input(0).get_partial_shape()[2].get_length())

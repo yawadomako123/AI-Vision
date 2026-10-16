@@ -23,6 +23,7 @@ ENV PATH="/app/services/vision/.venv/bin:$PATH" \
     MODEL_PATH=/models/rfdetr-nano.onnx \
     EVENT_STORAGE_PATH=/data/events \
     RULES_PATH=/data/rules.json \
+    OPENVINO_CACHE_DIR=/data/ov_cache \
     INFERENCE_DEVICE=CPU
 RUN useradd --uid 10001 --create-home app && mkdir -p /data/events && chown -R app /data
 USER app

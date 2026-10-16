@@ -5,7 +5,10 @@ the e2e clip (scripts/make_e2e_clip.py) and E2E_ADMIN_USERNAME / E2E_ADMIN_PASSW
 Starts its own vision worker unless one is already connected to the API.
 
 Run from services/backend:
-    uv run python ../../scripts/e2e.py
+    uv run python ../../scripts/e2e.py            # cleans up after itself
+    uv run python ../../scripts/e2e.py --keep     # leave the test camera + events to look at
+
+Against the Docker deployment:  E2E_API=http://127.0.0.1:8080 E2E_CAMERA_RTSP=mediamtx:8554
 """
 
 import asyncio
@@ -21,8 +24,10 @@ import httpx
 import websockets
 
 ROOT = Path(__file__).resolve().parents[1]
-API = "http://127.0.0.1:8000"
-RTSP = "127.0.0.1:8554"
+API = os.environ.get("E2E_API", "http://127.0.0.1:8000")
+RTSP = "127.0.0.1:8554"  # where this script publishes the test stream
+# How the worker reaches MediaMTX: 127.0.0.1 natively, "mediamtx" inside Docker Compose.
+CAMERA_RTSP = os.environ.get("E2E_CAMERA_RTSP", RTSP)
 PATH = "e2e"
 CAMERA_NAME = "E2E test camera"
 OPERATOR = "e2e-operator"
@@ -147,7 +152,7 @@ def main() -> int:
     check("Live updates connect (WebSocket)", live.connected.wait(10))
 
     camera = admin.post("/api/cameras", json={"name": CAMERA_NAME, "location": "e2e",
-                                              "stream_url": f"rtsp://{RTSP}/{PATH}"}).json()
+                                              "stream_url": f"rtsp://{CAMERA_RTSP}/{PATH}"}).json()
     cam_id = camera["id"]
     zone = admin.post(f"/api/cameras/{cam_id}/rules", json={
         "type": "zone_entry", "name": "E2E zone", "severity": "high",
@@ -244,7 +249,10 @@ def main() -> int:
         live.stop = True
         if worker:
             kill_tree(worker)
-        admin.delete(f"/api/cameras/{cam_id}")
+        if "--keep" in sys.argv:
+            print(f"  (--keep: left camera {cam_id} and its events in place for inspection)")
+        else:
+            admin.delete(f"/api/cameras/{cam_id}")
         users = {u["username"]: u for u in admin.get("/api/users").json()}
         if OPERATOR in users:
             admin.patch(f"/api/users/{users[OPERATOR]['id']}", json={"active": False})
