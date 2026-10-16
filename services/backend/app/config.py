@@ -3,7 +3,9 @@ from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+_HERE = Path(__file__).resolve()
+# Repo checkout: <root>/services/backend/app/config.py. Docker image: /app/app/config.py.
+REPO_ROOT = _HERE.parents[3] if len(_HERE.parents) > 3 else _HERE.parents[1]
 
 
 class Settings(BaseSettings):

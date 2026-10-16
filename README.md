@@ -116,6 +116,10 @@ docker compose --profile full up -d --build    # MediaMTX, PostgreSQL, API + das
 - **Camera URLs:** cameras that go through MediaMTX are registered as `rtsp://mediamtx:8554/<path>`.
 - **Intel iGPU on a Linux host:** uncomment the `/dev/dri` device for the `vision` service and set `CONTAINER_INFERENCE_DEVICE=GPU`.
 - **Model:** the worker reads the ONNX model from `./models`.
+- **Ports:** set `API_PORT` in `.env` if 8000 is already in use.
+- **Memory:** give Docker at least **4 GB of RAM**. The worker image is about 2.9 GB (OpenVINO and OpenCV), so on a 2 GB Docker Desktop VM with little free RAM the worker container may never start. On a laptop, the native setup above is lighter.
+
+*Tested so far:* both images build, and the API container starts healthy, runs migrations, serves the dashboard and enforces login. The worker container hasn't been run on this laptop yet because of the memory limit above.
 
 ## Backups
 
