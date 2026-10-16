@@ -8,8 +8,9 @@ API mode (API_BASE_URL set): cameras are fetched from the API every CAMERA_REFRE
 (added/removed/changed cameras are picked up live), camera status is reported every 5 s and
 events are sent to the API. Events and snapshots are always written to storage/events too.
 
-Rules come from config/rules.json keyed by "cam<id>" (draw them with `python -m app.draw_rules`)
-and are reloaded when the file changes.
+Rules: in API mode they are drawn in the dashboard and fetched every few seconds; per-minute
+people/vehicle counts are sent for analytics. In standalone mode they come from
+config/rules.json keyed by "cam<id>" (draw with `python -m app.draw_rules`).
 """
 
 import argparse
@@ -28,10 +29,12 @@ from app.detector import COCO_CLASSES, Detector
 from app.event_publisher import EventPublisher
 from app.frame_reader import FrameReader
 from app.overlay import draw_rules
-from app.rule_engine import RuleEngine, RuleHit, RulesFile, object_positions
+from app.counts import MinuteCounter
+from app.rule_engine import Rule, RuleEngine, RuleHit, RulesFile, object_positions
 
 log = logging.getLogger("vision")
 STATUS_REPORT_SECONDS = 5.0
+RULES_REFRESH_SECONDS = 3.0
 
 
 def main() -> None:
@@ -51,8 +54,42 @@ def main() -> None:
     )
     log.info("Model %s, input %spx, provider %s", settings.model_path.name, detector.resolution, detector.provider)
 
+    # Rules: from the API in API mode (drawn in the dashboard), else from config/rules.json.
     rules_file = RulesFile(settings.rules_path)
-    rules_file.changed()
+    if not api:
+        rules_file.changed()
+    api_rules: dict[int, list[Rule]] = {}
+
+    def fetch_api_rules() -> bool:
+        """Refresh api_rules. Returns False if the API couldn't be reached."""
+        try:
+            raw = api.rules()
+        except httpx.HTTPError as exc:
+            log.warning("Could not fetch rules from API (%s); keeping current rules", exc)
+            return False
+        parsed: dict[int, list[Rule]] = {}
+        for cam_id, rules in raw.items():
+            for r in rules:
+                try:
+                    parsed.setdefault(cam_id, []).append(Rule.from_dict({**r, "id": f"rule{r['id']}"}))
+                except (KeyError, ValueError) as exc:
+                    log.error("Skipping invalid rule %s: %s", r.get("id"), exc)
+        api_rules.clear()
+        api_rules.update(parsed)
+        return True
+
+    def rules_for(cam_id: int) -> list[Rule]:
+        return api_rules.get(cam_id, []) if api else rules_file.for_camera(f"cam{cam_id}")
+
+    def apply_rules() -> None:
+        for cam in cameras.values():
+            new = rules_for(cam["id"])
+            if [vars(r) for r in new] != [vars(r) for r in cam["engine"].rules]:  # don't reset state needlessly
+                cam["engine"].set_rules(new)
+                log.info("%s rules updated (%d)", cam["key"], len(new))
+
+    if api:
+        fetch_api_rules()
     publisher = EventPublisher(settings.event_storage_path)
     cameras: dict[int, dict] = {}
 
@@ -78,7 +115,7 @@ def main() -> None:
                 log.info("cam%d stopped", cam_id)
         for cam_id, source in desired.items():
             if cam_id not in cameras:
-                cameras[cam_id] = start_camera(cam_id, source, rules_file)
+                cameras[cam_id] = start_camera(cam_id, source, rules_for(cam_id))
 
     def emit(cam: dict, hit: RuleHit, image) -> None:
         event = publisher.publish(cam["key"], hit, image, cam["engine"].rules)
@@ -97,10 +134,9 @@ def main() -> None:
                 next_camera_sync = now + (settings.camera_refresh_seconds if api else 1e9)
                 sync_cameras()
             if now >= next_rules_check:
-                next_rules_check = now + 2.0
-                if rules_file.changed():
-                    for cam in cameras.values():
-                        cam["engine"].set_rules(rules_file.for_camera(cam["key"]))
+                next_rules_check = now + RULES_REFRESH_SECONDS
+                if (api and fetch_api_rules()) or (not api and rules_file.changed()):
+                    apply_rules()
             if api and now >= next_status_report:
                 next_status_report = now + STATUS_REPORT_SECONDS
                 for cam in cameras.values():
@@ -131,6 +167,9 @@ def main() -> None:
 
                 # Derived from class_id: the tracker drops `data` when nothing is detected.
                 names = [COCO_CLASSES.get(int(c), str(c)) for c in detections.class_id]
+                samples = cam["counter"].add(names, frame.captured_at)
+                if api and samples:
+                    api.send_counts(samples)
                 stats = cam["stats"]
                 stats["inferences"] += 1
                 stats["infer_ms"] += infer_ms
@@ -174,15 +213,16 @@ def main() -> None:
     finally:
         for cam in cameras.values():
             stop_camera(cam, args.show)
+            if api:
+                api.send_counts(cam["counter"].flush())  # partial last minute
         if api:
             api.close()
         if args.show:
             cv2.destroyAllWindows()
 
 
-def start_camera(cam_id: int, source: str, rules_file: RulesFile) -> dict:
+def start_camera(cam_id: int, source: str, rules: list[Rule]) -> dict:
     key = f"cam{cam_id}"
-    rules = rules_file.for_camera(key)
     log.info("%s starting (%d rules)", key, len(rules))  # never log the source: it may contain a password
     return {
         "id": cam_id,
@@ -192,6 +232,7 @@ def start_camera(cam_id: int, source: str, rules_file: RulesFile) -> dict:
         # frame_rate = our sampling rate, so lost_track_buffer is measured in sampled frames
         "tracker": sv.ByteTrack(frame_rate=max(1, round(settings.inference_fps))),
         "engine": RuleEngine(rules),
+        "counter": MinuteCounter(cam_id),
         "started_at": time.time(),
         "offline_alerted": False,
         "last_image": None,
