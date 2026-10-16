@@ -2,7 +2,7 @@
 
 Local-first AI analytics for IP cameras. See [ai-vision-edge-project.md](ai-vision-edge-project.md) for the full spec.
 
-**Current milestone:** vision worker (ingest → detect → track) tested with an Android phone and looping video files as cameras. Everything here is free and runs on this laptop.
+**Current milestone:** vision worker (ingest → detect → track → zone/line rules → events + snapshots), tested with an Android phone and looping video files as cameras. Everything here is free and runs on this laptop.
 
 ```
 Android phone (Larix) ──RTSP publish──┐
@@ -76,6 +76,34 @@ Set `CAMERA_SOURCES` in `.env` to all four `rtsp://localhost:8554/camN` URLs and
 uv run python -m app.main --source ..\..\samples\clip.mp4 --show
 ```
 
+## 4. Zones, tripwires and events
+
+Draw rules on the live phone view (the worker can keep running; it reloads rules within ~2 s):
+
+```powershell
+cd services\vision
+uv run python -m app.draw_rules            # cam1; use --camera cam2 for others
+```
+
+| Key | Rule | Fires when |
+|---|---|---|
+| `1` | Zone entry | a person's feet enter the zone |
+| `2` | Tripwire | a person crosses the line (2 clicks) |
+| `3` | Loitering | a person stays in the zone longer than `dwell_seconds` (default 20) |
+| `4` | Occupancy | more than `max_count` people are in the zone (default 3) |
+
+Click points, press **Enter** to finish a zone, **u** to undo a point, **Esc** to cancel, **d** to delete the last rule, **q** to quit.
+Rules are saved to `config/rules.json`. Edit it to rename rules or change `classes`, `severity`, `cooldown_seconds`, `dwell_seconds`, `max_count`, or a tripwire's `direction` (`in`/`out`/`both`). See [config/rules.example.json](config/rules.example.json).
+
+Draw zones **on the floor**: objects are located by the bottom-center of their box (where feet touch the ground).
+
+Events are written to `storage/events/`:
+
+- `events.jsonl`: one JSON event per line
+- `YYYY/MM/DD/<event>.jpg`: snapshot with the zone and the person highlighted
+
+The worker also raises `camera_offline` after `OFFLINE_ALERT_SECONDS` (default 15) without frames, and `camera_online` when the camera recovers.
+
 ## Worker output
 
 One JSON line per camera per second:
@@ -88,6 +116,5 @@ One JSON line per camera per second:
 
 ## Next milestones
 
-1. Zone/line/loitering rules + event snapshots (supervision `PolygonZone`/`LineZone`), tested against recorded clips.
-2. FastAPI + PostgreSQL: camera registry, event API, WebSocket.
-3. React dashboard: overview, cameras (zone drawing), events.
+1. FastAPI + PostgreSQL: camera registry, event API, WebSocket.
+2. React dashboard: overview, cameras (zone drawing), events.

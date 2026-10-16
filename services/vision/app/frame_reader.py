@@ -23,7 +23,7 @@ class Frame:
 
 
 class FrameReader:
-    def __init__(self, camera_id: str, source: str, max_backoff: float = 30.0):
+    def __init__(self, camera_id: str, source: str, max_backoff: float = 10.0):
         self.camera_id = camera_id
         self.source = source
         self.is_file = not source.lower().startswith(("rtsp://", "rtsps://", "http://", "https://"))
