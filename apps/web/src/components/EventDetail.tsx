@@ -6,30 +6,14 @@ import { eventLabel, formatDateTime } from "../format";
 import { EventStatusBadge, SeverityBadge } from "./Badges";
 import { Button, ErrorNote, inputCls } from "./ui";
 
-const REVIEWER_KEY = "aivision.reviewer";
-
-function savedReviewer(): string {
-  try {
-    return localStorage.getItem(REVIEWER_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
 export function EventDetail({ event, onDone }: { event: VisionEvent; onDone: () => void }) {
   const qc = useQueryClient();
   const [note, setNote] = useState(event.note ?? "");
-  const [reviewer, setReviewer] = useState(event.reviewed_by ?? savedReviewer());
 
+  // The reviewer is recorded by the server from the signed-in account.
   const review = useMutation({
-    mutationFn: (status: EventStatus) =>
-      api.updateEvent(event.id, { status, note: note || undefined, reviewed_by: reviewer || undefined }),
+    mutationFn: (status: EventStatus) => api.updateEvent(event.id, { status, note: note || undefined }),
     onSuccess: () => {
-      try {
-        if (reviewer) localStorage.setItem(REVIEWER_KEY, reviewer);
-      } catch {
-        /* storage unavailable */
-      }
       qc.invalidateQueries({ queryKey: ["events"] });
       qc.invalidateQueries({ queryKey: ["summary"] });
       onDone();
@@ -110,10 +94,6 @@ export function EventDetail({ event, onDone }: { event: VisionEvent; onDone: () 
         )}
 
         <div className="flex flex-col gap-2 border-t border-line pt-4">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Your name</span>
-            <input className={inputCls} value={reviewer} onChange={(e) => setReviewer(e.target.value)} maxLength={120} />
-          </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted">Note</span>
             <textarea

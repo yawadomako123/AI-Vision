@@ -2,11 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { NavLink, Navigate, Route, Routes } from "react-router";
 
 import { api } from "./api";
+import { useAuth } from "./auth";
 import { EventToasts } from "./components/Toasts";
 import { useLive } from "./live";
+import Analytics from "./pages/Analytics";
 import Cameras from "./pages/Cameras";
 import Events from "./pages/Events";
 import Overview from "./pages/Overview";
+import RulesEditor from "./pages/RulesEditor";
+import Settings from "./pages/Settings";
 
 function LiveIndicator() {
   const { state } = useLive();
@@ -38,7 +42,22 @@ function Nav() {
         )}
       </NavLink>
       <NavLink to="/cameras" className={link}>Cameras</NavLink>
+      <NavLink to="/analytics" className={link}>Analytics</NavLink>
+      <NavLink to="/settings" className={link}>Settings</NavLink>
     </nav>
+  );
+}
+
+function UserMenu() {
+  const { user, logout } = useAuth();
+  return (
+    <div className="flex items-center justify-between gap-2 text-sm md:mt-auto md:flex-col md:items-start md:border-t md:border-line md:pt-4">
+      <span className="min-w-0 truncate">
+        <span className="font-medium">{user.username}</span>
+        <span className="text-muted"> · {user.role === "admin" ? "Admin" : "Operator"}</span>
+      </span>
+      <button type="button" onClick={logout} className="text-muted hover:text-text">Sign out</button>
+    </div>
   );
 }
 
@@ -53,13 +72,17 @@ export default function App() {
           </span>
           <LiveIndicator />
         </div>
-        <Nav />
+        <div className="overflow-x-auto"><Nav /></div>
+        <UserMenu />
       </aside>
       <main className="mx-auto w-full max-w-7xl px-4 py-5 md:px-8 md:py-7">
         <Routes>
           <Route path="/" element={<Overview />} />
           <Route path="/events" element={<Events />} />
           <Route path="/cameras" element={<Cameras />} />
+          <Route path="/cameras/:id/rules" element={<RulesEditor />} />
+          <Route path="/analytics" element={<Analytics />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

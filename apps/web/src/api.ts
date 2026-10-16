@@ -62,6 +62,7 @@ export interface EventFilters {
   event_type?: string;
   status?: string;
   severity?: string;
+  since?: string;
   limit?: number;
   offset?: number;
 }
@@ -73,13 +74,90 @@ export interface Summary {
   unreviewed: number;
 }
 
-export class ApiError extends Error {}
+export type Role = "admin" | "operator";
+
+export interface User {
+  id: number;
+  username: string;
+  role: Role;
+  active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export interface AuthStatus {
+  setup_required: boolean;
+  user: User | null;
+}
+
+export type RuleType = "zone_entry" | "line_crossing" | "loitering" | "occupancy";
+export type Point = [number, number];
+
+export interface Rule {
+  id: number;
+  camera_id: number;
+  type: RuleType;
+  name: string;
+  points: Point[];
+  classes: string[];
+  severity: Severity;
+  cooldown_seconds: number;
+  direction: "in" | "out" | "both";
+  dwell_seconds: number;
+  max_count: number;
+  enabled: boolean;
+}
+
+export type RuleInput = Omit<Rule, "id" | "camera_id">;
+
+export interface Timeseries {
+  bucket: "hour" | "day";
+  buckets: string[];
+  counts: Record<string, { peak: number[]; avg: number[] }>;
+  events: Record<string, number[]>;
+}
+
+export interface AppSettings {
+  event_retention_days: number;
+  count_retention_days: number;
+}
+
+export interface SystemHealth {
+  database: "ok" | "error";
+  worker: { last_contact: string | null; connected: boolean };
+  storage: { snapshots: number; snapshot_bytes: number; disk_free_bytes: number; disk_total_bytes: number };
+  events_total: number;
+}
+
+export interface AuditEntry {
+  id: number;
+  at: string;
+  username: string | null;
+  action: string;
+  target: string | null;
+  detail: Record<string, unknown>;
+  ip: string | null;
+}
+
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+/** Fired when the session has expired, so the app can show the login screen. */
+export const UNAUTHORIZED_EVENT = "aiv:unauthorized";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    credentials: "same-origin",
+    // The custom header is the API's CSRF check: browsers can't send it cross-site.
+    headers: { "Content-Type": "application/json", "X-Requested-With": "aivision", ...init?.headers },
   });
+  if (res.status === 401 && !path.startsWith("/api/auth/")) {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
     try {
@@ -89,7 +167,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* not JSON */
     }
-    throw new ApiError(message);
+    throw new ApiError(message, res.status);
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }
@@ -115,4 +193,37 @@ export const api = {
     request<VisionEvent>(`/api/events/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
 
   summary: (hours = 24) => request<Summary>(`/api/analytics/summary${query({ hours })}`),
+  timeseries: (hours: number, bucket: "hour" | "day", camera_id?: string) =>
+    request<Timeseries>(`/api/analytics/timeseries${query({ hours, bucket, camera_id })}`),
+  eventsCsvUrl: (f: EventFilters) => `/api/events/export.csv${query({ ...f, limit: undefined, offset: undefined })}`,
+
+  authStatus: () => request<AuthStatus>("/api/auth/status"),
+  setup: (username: string, password: string) =>
+    request<User>("/api/auth/setup", { method: "POST", body: JSON.stringify({ username, password }) }),
+  login: (username: string, password: string) =>
+    request<User>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+  logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+  changePassword: (current_password: string, new_password: string) =>
+    request<void>("/api/auth/password", { method: "POST", body: JSON.stringify({ current_password, new_password }) }),
+
+  users: () => request<User[]>("/api/users"),
+  createUser: (body: { username: string; password: string; role: Role }) =>
+    request<User>("/api/users", { method: "POST", body: JSON.stringify(body) }),
+  updateUser: (id: number, body: { role?: Role; active?: boolean; password?: string }) =>
+    request<User>(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  audit: (limit = 50, offset = 0) =>
+    request<{ total: number; items: AuditEntry[] }>(`/api/audit${query({ limit, offset })}`),
+
+  rules: (cameraId: number) => request<Rule[]>(`/api/cameras/${cameraId}/rules`),
+  createRule: (cameraId: number, body: Partial<RuleInput>) =>
+    request<Rule>(`/api/cameras/${cameraId}/rules`, { method: "POST", body: JSON.stringify(body) }),
+  updateRule: (id: number, body: Partial<RuleInput>) =>
+    request<Rule>(`/api/rules/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteRule: (id: number) => request<void>(`/api/rules/${id}`, { method: "DELETE" }),
+  frameUrl: (cameraId: number) => `/api/cameras/${cameraId}/frame?t=${Date.now()}`,
+
+  settings: () => request<AppSettings>("/api/settings"),
+  updateSettings: (body: Partial<AppSettings>) =>
+    request<AppSettings>("/api/settings", { method: "PATCH", body: JSON.stringify(body) }),
+  system: () => request<SystemHealth>("/api/system"),
 };

@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import type { Camera, VisionEvent } from "./api";
+import { UNAUTHORIZED_EVENT, type Camera, type VisionEvent } from "./api";
 
 export type LiveState = "connecting" | "live" | "reconnecting";
 
@@ -55,6 +55,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             qc.invalidateQueries({ queryKey: ["cameras"] });
             qc.invalidateQueries({ queryKey: ["summary"] });
             break;
+          case "rules":
+            qc.invalidateQueries({ queryKey: ["rules", data.camera_id] });
+            break;
           case "camera":
           case "camera_deleted":
             qc.invalidateQueries({ queryKey: ["cameras"] });
@@ -63,8 +66,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (e) => {
         if (disposed) return;
+        if (e.code === 4401) {
+          // Session expired: let the auth gate show the login screen instead of retrying.
+          window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+          return;
+        }
         setState("reconnecting");
         timer = window.setTimeout(connect, retryMs);
         retryMs = Math.min(retryMs * 2, 15000);

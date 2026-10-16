@@ -8,6 +8,10 @@
 
 logLevel: info
 
+# Default is 10s; phones on Wi-Fi and busy laptops can stall longer than that and get kicked.
+readTimeout: 30s
+writeTimeout: 30s
+
 rtsp: yes
 rtspAddress: :8554
 rtspTransports: [tcp, udp]

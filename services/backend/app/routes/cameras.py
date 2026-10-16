@@ -1,3 +1,6 @@
+import io
+import time
+
 import av
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
@@ -33,6 +36,23 @@ def _commit(db: Session) -> None:
 
 def _open(url: str):
     return av.open(url, options={"rtsp_transport": "tcp"}, timeout=(5.0, 5.0))
+
+
+def _first_frame(container, budget_seconds: float = 8.0):
+    """Decode the first complete frame. Joining a live stream mid-GOP yields packets that
+    can't be decoded until the next keyframe; skip those instead of failing."""
+    stream = container.streams.video[0]
+    deadline = time.monotonic() + budget_seconds
+    for packet in container.demux(stream):
+        try:
+            frames = packet.decode()
+        except av.error.InvalidDataError:
+            frames = []
+        if frames:
+            return stream, frames[0]
+        if time.monotonic() > deadline:
+            break
+    raise RuntimeError("no decodable frame received")
 
 
 @router.get("", response_model=list[CameraOut])
@@ -100,8 +120,7 @@ def test_camera(camera_id: int, _: User = Depends(current_user), db: Session = D
     url = decrypt(_get(db, camera_id).stream_url_encrypted)
     try:
         with _open(url) as container:
-            stream = container.streams.video[0]
-            frame = next(container.decode(stream))
+            stream, frame = _first_frame(container)
             return CameraTestResult(ok=True, width=frame.width, height=frame.height, codec=stream.codec_context.name)
     except Exception as exc:  # noqa: BLE001
         return CameraTestResult(ok=False, error=_redact(exc, url))
@@ -113,9 +132,7 @@ def camera_frame(camera_id: int, _: User = Depends(current_user), db: Session = 
     url = decrypt(_get(db, camera_id).stream_url_encrypted)
     try:
         with _open(url) as container:
-            frame = next(container.decode(container.streams.video[0]))
-            import io
-
+            _, frame = _first_frame(container)
             buf = io.BytesIO()
             frame.to_image().save(buf, format="JPEG", quality=85)
     except Exception as exc:  # noqa: BLE001

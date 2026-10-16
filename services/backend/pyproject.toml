@@ -13,6 +13,7 @@ dependencies = [
     "cryptography",   # Fernet (authenticated encryption) for camera credentials
     "av",             # camera connection test
     "argon2-cffi>=25.1.0",
+    "pillow>=12.3.0",
 ]
 
 [dependency-groups]

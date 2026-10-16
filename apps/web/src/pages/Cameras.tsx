@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router";
 
 import { api, type Camera, type CameraTestResult } from "../api";
+import { useAuth } from "../auth";
 import { CameraStatusBadge } from "../components/Badges";
 import { Modal } from "../components/Modal";
 import { Button, Card, Empty, ErrorNote, inputCls } from "../components/ui";
@@ -58,6 +60,7 @@ function CameraForm({ camera, onDone }: { camera?: Camera; onDone: () => void })
 
 function CameraCard({ camera, onEdit }: { camera: Camera; onEdit: () => void }) {
   const qc = useQueryClient();
+  const { isAdmin } = useAuth();
   const [showLive, setShowLive] = useState(false);
   const [test, setTest] = useState<CameraTestResult | null>(null);
   const live = liveViewUrl(camera.stream_url_masked);
@@ -100,13 +103,21 @@ function CameraCard({ camera, onEdit }: { camera: Camera; onEdit: () => void }) 
 
         <div className="flex flex-wrap gap-2">
           {live && <Button onClick={() => setShowLive((v) => !v)}>{showLive ? "Hide live" : "Live view"}</Button>}
+          <Link to={`/cameras/${camera.id}/rules`}
+                className="inline-flex items-center rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium hover:bg-surface-2">
+            Rules
+          </Link>
           <Button onClick={() => runTest.mutate()} disabled={runTest.isPending}>{runTest.isPending ? "Testing…" : "Test"}</Button>
-          <Button onClick={onEdit}>Edit</Button>
-          <Button onClick={() => toggle.mutate()} disabled={toggle.isPending}>{camera.enabled ? "Disable" : "Enable"}</Button>
-          <Button variant="danger" className="ml-auto" disabled={remove.isPending}
-                  onClick={() => confirm(`Delete "${camera.name}" and all of its events?`) && remove.mutate()}>
-            Delete
-          </Button>
+          {isAdmin && (
+            <>
+              <Button onClick={onEdit}>Edit</Button>
+              <Button onClick={() => toggle.mutate()} disabled={toggle.isPending}>{camera.enabled ? "Disable" : "Enable"}</Button>
+              <Button variant="danger" disabled={remove.isPending}
+                      onClick={() => confirm(`Delete "${camera.name}" and all of its events?`) && remove.mutate()}>
+                Delete
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </Card>
@@ -115,13 +126,14 @@ function CameraCard({ camera, onEdit }: { camera: Camera; onEdit: () => void }) 
 
 export default function Cameras() {
   const cameras = useQuery({ queryKey: ["cameras"], queryFn: api.cameras });
+  const { isAdmin } = useAuth();
   const [editing, setEditing] = useState<Camera | "new" | null>(null);
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Cameras</h1>
-        <Button variant="primary" onClick={() => setEditing("new")}>Add camera</Button>
+        {isAdmin && <Button variant="primary" onClick={() => setEditing("new")}>Add camera</Button>}
       </div>
       {cameras.error && <ErrorNote error={cameras.error} />}
       {cameras.data?.length === 0 && (
