@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useParams } from "react-router";
 
-import { api, type Point, type Rule, type RuleInput, type RuleType } from "../api";
+import { api, isLine, type Point, type Rule, type RuleInput, type RuleType } from "../api";
 import { useAuth } from "../auth";
 import { Button, Card, Empty, ErrorNote, inputCls, selectCls } from "../components/ui";
 
@@ -11,6 +11,7 @@ const TYPES: { type: RuleType; label: string; hint: string; color: string }[] = 
   { type: "line_crossing", label: "Tripwire", hint: "Alert when someone crosses a line", color: "var(--warn)" },
   { type: "loitering", label: "Loitering", hint: "Alert when someone stays too long", color: "var(--accent)" },
   { type: "occupancy", label: "Occupancy", hint: "Alert when too many people are inside", color: "#9085e9" },
+  { type: "counting_line", label: "Counter", hint: "Count people and vehicles going in and out (no alerts)", color: "var(--ok)" },
 ];
 const typeInfo = (t: RuleType) => TYPES.find((x) => x.type === t)!;
 const CLASSES = ["person", "bicycle", "car", "motorcycle", "bus", "truck"];
@@ -25,10 +26,27 @@ function Shape({ type, points, color, selected, draft }: {
   const d = points.map((p) => p.join(",")).join(" ");
   const common = { stroke: color, strokeWidth: selected ? 3 : 2, vectorEffect: "non-scaling-stroke" as const,
                    strokeDasharray: draft ? "6 4" : undefined };
-  if (type === "line_crossing" || (draft && points.length < 3)) {
+  if (isLine(type) || (draft && points.length < 3)) {
     return <polyline points={d} fill="none" {...common} />;
   }
   return <polygon points={d} fill={color} fillOpacity={selected ? 0.28 : 0.16} {...common} />;
+}
+
+/** Arrow across a line pointing the way that counts as "in" (left to right, facing from point 1
+ * to point 2). Angles are computed in pixels, since the surface is stretched to the camera's shape. */
+function InArrow({ points, aspect, color }: { points: Point[]; aspect: number; color: string }) {
+  const [[x1, y1], [x2, y2]] = points;
+  const angle = (Math.atan2(-(x2 - x1), (y2 - y1) * (1 / aspect)) * 180) / Math.PI;
+  return (
+    <span aria-hidden className="pointer-events-none absolute flex items-center text-xs font-semibold text-white"
+          style={{ left: `${((x1 + x2) / 2) * 100}%`, top: `${((y1 + y2) / 2) * 100}%`,
+                   transform: `translate(-50%, -50%) rotate(${angle}deg) translateX(18px)` }}>
+      <svg width="22" height="12" viewBox="0 0 22 12" style={{ filter: "drop-shadow(0 0 2px #000)" }}>
+        <path d="M0 6h16M11 1l6 5-6 5" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <span style={{ transform: `rotate(${-angle}deg)`, textShadow: "0 0 3px #000" }}>in</span>
+    </span>
+  );
 }
 
 function RuleForm({ rule, canEdit, onDeleted }: { rule: Rule; canEdit: boolean; onDeleted: () => void }) {
@@ -55,7 +73,14 @@ function RuleForm({ rule, canEdit, onDeleted }: { rule: Rule; canEdit: boolean; 
           <span className="text-xs font-medium text-muted">Name</span>
           <input className={inputCls} value={form.name} onChange={(e) => set("name", e.target.value)} required maxLength={120} />
         </label>
+        {form.type === "counting_line" && (
+          <p className="text-xs text-muted">
+            Counts crossings without raising alerts, even while the system is disarmed. Crossing the way the arrow points
+            counts as <strong className="text-text">in</strong>. Totals are in Analytics → Entries and exits.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-3">
+          {form.type !== "counting_line" && (<>
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted">Severity</span>
             <select className={selectCls} value={form.severity} onChange={(e) => set("severity", e.target.value as Rule["severity"])}>
@@ -67,6 +92,7 @@ function RuleForm({ rule, canEdit, onDeleted }: { rule: Rule; canEdit: boolean; 
             <input className={inputCls} type="number" min={0} max={86400} value={form.cooldown_seconds}
                    onChange={(e) => set("cooldown_seconds", Number(e.target.value))} />
           </label>
+          </>)}
           {form.type === "loitering" && (
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-muted">Alert after staying (s)</span>
@@ -89,7 +115,7 @@ function RuleForm({ rule, canEdit, onDeleted }: { rule: Rule; canEdit: boolean; 
           </label>
           {form.type === "line_crossing" && (
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted">Direction</span>
+              <span className="text-xs font-medium text-muted">Direction (arrow = in)</span>
               <select className={selectCls} value={form.direction} onChange={(e) => set("direction", e.target.value as Rule["direction"])}>
                 <option value="both">Both ways</option><option value="in">In only</option><option value="out">Out only</option>
               </select>
@@ -215,7 +241,7 @@ export default function RulesEditor() {
   const onSurfaceClick = (e: React.MouseEvent) => {
     if (!tool) return;
     const pts = [...draft, toPoint(e)];
-    if (tool === "line_crossing" && pts.length === 2) finish(pts);
+    if (isLine(tool) && pts.length === 2) finish(pts);
     else setDraft(pts);
   };
 
@@ -223,7 +249,7 @@ export default function RulesEditor() {
     const onKey = (e: KeyboardEvent) => {
       if (!tool) return;
       if (e.key === "Escape") { setTool(null); setDraft([]); }
-      if (e.key === "Enter" && tool !== "line_crossing" && draft.length >= 3) finish();
+      if (e.key === "Enter" && !isLine(tool) && draft.length >= 3) finish();
       if (e.key === "Backspace") setDraft((d) => d.slice(0, -1));
     };
     window.addEventListener("keydown", onKey);
@@ -259,6 +285,8 @@ export default function RulesEditor() {
     setDrag(null);
   };
 
+  const [aw, ah] = aspect.split("/").map(Number);
+  const aspectRatio = aw && ah ? aw / ah : 16 / 9;
   const shown = (rules.data ?? []).map((r) => (dragging?.ruleId === r.id ? { ...r, points: dragging.points } : r));
   const selectedRule = rules.data?.find((r) => r.id === selected);
 
@@ -284,15 +312,15 @@ export default function RulesEditor() {
                   {t.label}
                 </Button>
               ))}
-              {tool && tool !== "line_crossing" && (
+              {tool && !isLine(tool) && (
                 <Button variant="primary" disabled={draft.length < 3} onClick={() => finish()}>Finish ({draft.length} points)</Button>
               )}
             </div>
           )}
           <p className="text-xs text-muted" aria-live="polite">
             {tool
-              ? tool === "line_crossing"
-                ? "Click two points to draw the tripwire."
+              ? isLine(tool)
+                ? `Click two points to draw the ${tool === "counting_line" ? "counting line" : "tripwire"}. Facing from the first point to the second, crossing left to right counts as "in".`
                 : "Click the corners of the area on the floor. Enter or Finish to save, Backspace to undo, Esc to cancel."
               : isAdmin
                 ? "Pick a rule type to draw, or click a rule to edit it. Drag a selected rule's corners to adjust."
@@ -341,6 +369,9 @@ export default function RulesEditor() {
                                background: typeInfo(r.type).color, pointerEvents: tool ? "none" : "auto" }}>
                 {r.name}
               </button>
+            ))}
+            {shown.filter((r) => isLine(r.type) && (r.type === "counting_line" || r.direction !== "both" || r.id === selected)).map((r) => (
+              <InArrow key={`arrow-${r.id}`} points={r.points} aspect={aspectRatio} color={typeInfo(r.type).color} />
             ))}
             {selectedRule && !tool && shown.find((r) => r.id === selected)!.points.map((p, i) => (
               <span key={i} role="presentation" onPointerDown={(e) => startDrag(e, selectedRule, i)}

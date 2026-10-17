@@ -221,3 +221,63 @@ def test_csv_export(client, camera):
     assert lines[0].startswith("id,occurred_at,camera")
     assert len(lines) == 2 and "Front door" in lines[1]
     assert "'=HYPERLINK" in lines[1]  # formula injection neutralized
+
+
+# --- entry/exit counting lines ----------------------------------------------------
+
+COUNTER = {"type": "counting_line", "name": "Front door", "points": [[0.5, 0], [0.5, 1]], "classes": ["person", "car"]}
+
+
+def line_sample(camera_id, rule_id, minutes_ago, n_in, n_out, cls="person", name="Front door"):
+    t = (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).replace(second=0, microsecond=0)
+    return {"camera_id": camera_id, "rule_id": rule_id, "rule_name": name, "bucket_start": t.isoformat(),
+            "class_name": cls, "in_count": n_in, "out_count": n_out}
+
+
+def test_counting_line_keeps_counting_while_disarmed(client, camera):
+    url = f"/api/cameras/{camera['id']}/rules"
+    assert client.post(url, json={**COUNTER, "points": [[0, 0], [1, 0], [1, 1]]}).status_code == 422
+    client.post(url, json=ZONE)
+    client.post(url, json=COUNTER)
+    feed = lambda: [r["type"] for r in client.get("/api/internal/rules", headers=WORKER).json()[str(camera["id"])]]
+    assert feed() == ["zone_entry", "counting_line"]
+    client.put("/api/arming", json={"armed": False})
+    assert feed() == ["counting_line"]  # counting never alerts, so it keeps going
+    client.put("/api/arming", json={"armed": True})
+
+
+def test_entries_analytics_and_csv(client, camera, db_session):
+    cam = camera["id"]
+    rule = client.post(f"/api/cameras/{cam}/rules", json=COUNTER).json()
+    r = client.post("/api/internal/line-counts", headers=WORKER, json=[
+        line_sample(cam, rule["id"], 5, 3, 1),
+        line_sample(cam, rule["id"], 5, 0, 2, cls="vehicle"),
+        line_sample(cam, rule["id"], 65, 1, 0),
+        line_sample(999, None, 5, 9, 9),  # unknown camera: ignored
+        line_sample(cam, 424242, 5, 1, 1, name="=Old line"),  # unknown rule: kept by name
+    ])
+    assert r.status_code == 204
+    assert client.post("/api/internal/line-counts", json=[]).status_code == 401  # worker only
+
+    data = client.get("/api/analytics/entries", params={"hours": 24}).json()
+    assert data["total"] == {"in": 5, "out": 4}
+    door = next(l for l in data["lines"] if l["rule_id"] == rule["id"])
+    assert (door["in_total"], door["out_total"]) == (4, 3)
+    assert door["by_class"] == {"person": {"in": 4, "out": 1}, "vehicle": {"in": 0, "out": 2}}
+    assert sum(door["in"]) == 4 and len(door["in"]) == len(data["buckets"])
+    assert any(l["rule_id"] is None and l["rule_name"] == "=Old line" for l in data["lines"])
+
+    # Deleting the rule keeps its history under the old name.
+    client.delete(f"/api/rules/{rule['id']}")
+    data = client.get("/api/analytics/entries", params={"hours": 24, "camera_id": cam}).json()
+    assert {l["rule_name"]: l["in_total"] for l in data["lines"]} == {"Front door": 4, "=Old line": 1}
+
+    csv_text = client.get("/api/analytics/entries.csv", params={"hours": 24, "bucket": "day"}).text
+    lines = csv_text.strip().splitlines()
+    assert lines[0] == "day_start_utc,camera,line,class,in,out"
+    assert any(",'=Old line," in l for l in lines)  # formula injection guard
+
+    from app.retention import run_retention
+    client.post("/api/internal/line-counts", headers=WORKER, json=[line_sample(cam, None, 60 * 24 * 200, 1, 1)])
+    with db_session() as db:
+        assert run_retention(db, __import__("pathlib").Path("does-not-exist-storage"))["count_samples"] == 1

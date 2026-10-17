@@ -13,8 +13,8 @@ from app.db import get_db
 from app.live import hub, worker_contact
 from app.notifier import notifier
 from app.settings_store import get_settings
-from app.models import Camera, CountSample, DetectionRule, Event
-from app.schemas import CameraStatusIn, CountSampleIn, EventIn, EventOut, InternalCamera, RuleOut
+from app.models import Camera, CountSample, DetectionRule, Event, LineCount
+from app.schemas import CameraStatusIn, CountSampleIn, EventIn, EventOut, InternalCamera, LineCountIn, RuleOut
 from app.serializers import event_out
 
 
@@ -37,12 +37,14 @@ def worker_cameras(db: Session = Depends(get_db)):
 
 @router.get("/rules", response_model=dict[int, list[RuleOut]])
 def worker_rules(db: Session = Depends(get_db)):
-    """Enabled rules grouped by camera id. Empty while the system is disarmed, so no rule can
-    fire; camera health alerts are raised independently and keep working."""
+    """Enabled rules grouped by camera id. While the system is disarmed only counting lines are
+    sent (they never alert), so no alert rule can fire; camera health alerts are raised
+    independently and keep working."""
+    query = select(DetectionRule).where(DetectionRule.enabled).order_by(DetectionRule.id)
     if not get_settings(db, "system")["armed"]:
-        return {}
+        query = query.where(DetectionRule.type == "counting_line")
     grouped: dict[int, list[RuleOut]] = {}
-    for rule in db.scalars(select(DetectionRule).where(DetectionRule.enabled).order_by(DetectionRule.id)):
+    for rule in db.scalars(query):
         grouped.setdefault(rule.camera_id, []).append(RuleOut.model_validate(rule))
     return grouped
 
@@ -59,6 +61,17 @@ def worker_config(db: Session = Depends(get_db)):
 def ingest_counts(samples: list[CountSampleIn], db: Session = Depends(get_db)):
     known = set(db.scalars(select(Camera.id)))
     db.add_all(CountSample(**s.model_dump()) for s in samples if s.camera_id in known)
+    db.commit()
+
+
+@router.post("/line-counts", status_code=status.HTTP_204_NO_CONTENT)
+def ingest_line_counts(samples: list[LineCountIn], db: Session = Depends(get_db)):
+    known = set(db.scalars(select(Camera.id)))
+    rules = set(db.scalars(select(DetectionRule.id)))
+    db.add_all(
+        LineCount(**{**s.model_dump(), "rule_id": s.rule_id if s.rule_id in rules else None})
+        for s in samples if s.camera_id in known
+    )
     db.commit()
 
 

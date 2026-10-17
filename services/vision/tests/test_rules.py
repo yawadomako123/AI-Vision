@@ -143,6 +143,26 @@ def test_line_crossing_direction_filter():
     assert run(both[0]) == [both[0]]
 
 
+def test_line_direction_convention():
+    """Documented for the dashboard arrow: "in" = left to right, facing from point 1 to point 2."""
+    e = RuleEngine([Rule.from_dict({"id": "l", "type": "line_crossing", "points": [[0.5, 0.0], [0.5, 1.0]],
+                                    "cooldown_seconds": 0})])
+    hits = []
+    for t, x in enumerate([0.3, 0.4, 0.6, 0.7]):  # line points down; moving +x is its left-to-right
+        hits += e.update(dets((7, x, 0.5)), W, H, float(t))
+    assert [h.details["direction"] for h in hits] == ["in"]
+
+
+def test_counting_line_counts_without_alerting():
+    e = RuleEngine([Rule.from_dict({"id": "rule9", "type": "counting_line", "name": "Door",
+                                    "points": [[0.5, 0.0], [0.5, 1.0]], "classes": ["person", "car"]})])
+    for t, xs in enumerate([(0.3, 0.7), (0.4, 0.6), (0.6, 0.4), (0.7, 0.3), (0.6, 0.3), (0.4, 0.3)]):
+        assert e.update(dets((1, xs[0], 0.5), (2, xs[1], 0.5, CAR)), W, H, float(t)) == []
+    got = sorted((r.id, name, d) for r, name, d in e.take_crossings())
+    assert got == [("rule9", "car", "out"), ("rule9", "person", "in"), ("rule9", "person", "out")]
+    assert e.take_crossings() == []  # drained
+
+
 def test_loitering_after_dwell_time():
     e = engine(type="loitering", dwell_seconds=10)
     assert e.update(dets((1, 0.5, 0.5)), W, H, 0.0) == []

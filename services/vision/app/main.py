@@ -30,7 +30,7 @@ from app.detector import COCO_CLASSES, Detector
 from app.event_publisher import EventPublisher
 from app.frame_reader import FrameReader
 from app.overlay import draw_rules
-from app.counts import MinuteCounter
+from app.counts import LineCounter, MinuteCounter
 from app.rule_engine import Rule, RuleEngine, RuleHit, object_positions
 from app.sightings import SightingCollector, SiglipEmbedder
 
@@ -207,8 +207,10 @@ def main() -> None:
                 cam["sightings"].update(detections, names, object_positions(detections, h).xyxy[:, :2],
                                         frame.image, frame.captured_at)
                 samples = cam["counter"].add(names, frame.captured_at)
-                if api and samples:
+                line_samples = cam["lines"].add(engine.take_crossings(), frame.captured_at)
+                if api:
                     api.send_counts(samples)
+                    api.send_line_counts(line_samples)
                 stats = cam["stats"]
                 stats["inferences"] += 1
                 stats["infer_ms"] += infer_ms
@@ -254,6 +256,7 @@ def main() -> None:
             stop_camera(cam, args.show)
             if api:
                 api.send_counts(cam["counter"].flush())  # partial last minute
+                api.send_line_counts(cam["lines"].flush())
         if api:
             api.close()
         if args.show:
@@ -276,6 +279,7 @@ def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipC
         "tracker": sv.ByteTrack(frame_rate=max(1, round(fps))),
         "engine": RuleEngine(rules),
         "counter": MinuteCounter(cam_id),
+        "lines": LineCounter(cam_id),
         "started_at": time.time(),
         "offline_alerted": False,
         "last_image": None,

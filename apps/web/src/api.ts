@@ -91,7 +91,8 @@ export interface AuthStatus {
   user: User | null;
 }
 
-export type RuleType = "zone_entry" | "line_crossing" | "loitering" | "occupancy";
+export type RuleType = "zone_entry" | "line_crossing" | "loitering" | "occupancy" | "counting_line";
+export const isLine = (t: RuleType) => t === "line_crossing" || t === "counting_line";
 export type Point = [number, number];
 
 export interface Rule {
@@ -158,6 +159,25 @@ export interface RulePerformance {
 }
 
 export type RuleInput = Omit<Rule, "id" | "camera_id">;
+
+export interface EntryLine {
+  camera_id: number;
+  camera_name: string;
+  rule_id: number | null; // null once the counting line was deleted
+  rule_name: string;
+  in_total: number;
+  out_total: number;
+  by_class: Record<string, { in: number; out: number }>;
+  in: number[];
+  out: number[];
+}
+
+export interface Entries {
+  bucket: "hour" | "day";
+  buckets: string[];
+  total: { in: number; out: number };
+  lines: EntryLine[];
+}
 
 export interface Timeseries {
   bucket: "hour" | "day";
@@ -264,6 +284,10 @@ export const api = {
   timeseries: (hours: number, bucket: "hour" | "day", camera_id?: string) =>
     request<Timeseries>(`/api/analytics/timeseries${query({ hours, bucket, camera_id })}`),
   rulePerformance: (hours: number) => request<RulePerformance[]>(`/api/analytics/rules${query({ hours })}`),
+  entries: (hours: number, bucket: "hour" | "day", camera_id?: string) =>
+    request<Entries>(`/api/analytics/entries${query({ hours, bucket, camera_id })}`),
+  entriesCsvUrl: (hours: number, bucket: "hour" | "day", camera_id?: string) =>
+    `/api/analytics/entries.csv${query({ hours, bucket, camera_id })}`,
   eventsCsvUrl: (f: EventFilters) => `/api/events/export.csv${query({ ...f, limit: undefined, offset: undefined })}`,
 
   authStatus: () => request<AuthStatus>("/api/auth/status"),

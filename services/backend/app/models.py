@@ -69,7 +69,7 @@ class DetectionRule(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"), index=True)
-    type: Mapped[str] = mapped_column(String(30))  # zone_entry | line_crossing | loitering | occupancy
+    type: Mapped[str] = mapped_column(String(30))  # zone_entry | line_crossing | loitering | occupancy | counting_line
     name: Mapped[str] = mapped_column(String(120))
     points: Mapped[list] = mapped_column(JSON)
     classes: Mapped[list] = mapped_column(JSON, default=lambda: ["person"])
@@ -120,6 +120,23 @@ class CountSample(Base):
     class_name: Mapped[str] = mapped_column(String(60))
     avg_count: Mapped[float] = mapped_column(Float)
     max_count: Mapped[int]
+
+
+class LineCount(Base):
+    """Per-minute entry/exit totals from one counting line. Only minutes with crossings are stored."""
+
+    __tablename__ = "line_counts"
+    __table_args__ = (Index("ix_line_counts_camera_bucket", "camera_id", "bucket_start"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"))
+    # Kept (with its name) after the rule is deleted, so past counts stay in the reports.
+    rule_id: Mapped[int | None] = mapped_column(ForeignKey("detection_rules.id", ondelete="SET NULL"), nullable=True)
+    rule_name: Mapped[str] = mapped_column(String(120))
+    bucket_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    class_name: Mapped[str] = mapped_column(String(60))  # person | vehicle
+    in_count: Mapped[int]
+    out_count: Mapped[int]
 
 
 class User(Base):

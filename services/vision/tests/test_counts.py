@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
-from app.counts import MinuteCounter
+from app.counts import LineCounter, MinuteCounter
+from app.rule_engine import Rule
 
 
 def ts(minute: int, second: int) -> float:
@@ -18,3 +19,18 @@ def test_minute_rollover_emits_avg_and_peak():
     assert by_class["vehicle"]["avg_count"] == 1.5 and by_class["vehicle"]["max_count"] == 2
     # The empty frame belongs to minute 1.
     assert {s["max_count"] for s in c.flush()} == {0}
+
+
+def test_line_counter_per_minute_in_out():
+    door = Rule.from_dict({"id": "rule4", "type": "counting_line", "name": "Door", "points": [[0, 0], [1, 1]]})
+    c = LineCounter(camera_id=2)
+    assert c.add([], ts(0, 1)) == [] and c.flush() == []  # quiet minute: nothing to send
+    c.add([(door, "person", "in"), (door, "person", "in"), (door, "truck", "out")], ts(0, 10))
+    samples = c.add([(door, "person", "out")], ts(1, 0))
+    assert sorted(samples, key=lambda s: s["class_name"]) == [
+        {"camera_id": 2, "rule_id": 4, "rule_name": "Door", "bucket_start": "2026-10-16T10:00:00+00:00",
+         "class_name": "person", "in_count": 2, "out_count": 0},
+        {"camera_id": 2, "rule_id": 4, "rule_name": "Door", "bucket_start": "2026-10-16T10:00:00+00:00",
+         "class_name": "vehicle", "in_count": 0, "out_count": 1},
+    ]
+    assert [(s["in_count"], s["out_count"]) for s in c.flush()] == [(0, 1)]

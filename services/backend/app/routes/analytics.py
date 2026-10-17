@@ -1,9 +1,12 @@
+import csv
+import io
 import shutil
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import Response
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
@@ -13,8 +16,9 @@ from app.config import settings as app_settings
 from app.crypto import encrypt
 from app.db import get_db
 from app.live import hub, worker_contact
-from app.models import Camera, CountSample, Event, User
+from app.models import Camera, CountSample, Event, LineCount, User
 from app.notifier import send as notifier_send
+from app.routes.events import _cell
 from app.schemas import (
     ArmingIn, ArmingOut, NotificationSettingsOut, NotificationSettingsUpdate, NotificationTestResult, SettingsOut, SettingsUpdate,
 )
@@ -46,6 +50,18 @@ def _floor(dt: datetime, bucket: str) -> datetime:
     return dt.replace(hour=0) if bucket == "day" else dt
 
 
+def _buckets(hours: int, bucket: str) -> tuple[list[datetime], dict[datetime, int]]:
+    """Bucket starts covering the last `hours` up to now, and bucket start -> index."""
+    now = datetime.now(timezone.utc)
+    step = timedelta(hours=1) if bucket == "hour" else timedelta(days=1)
+    t = _floor(now - timedelta(hours=hours), bucket) + step
+    buckets = []
+    while t <= now:
+        buckets.append(t)
+        t += step
+    return buckets, {b: i for i, b in enumerate(buckets)}
+
+
 @router.get("/api/analytics/timeseries")
 def timeseries(
     hours: int = Query(default=24, ge=1, le=24 * 31),
@@ -59,16 +75,8 @@ def timeseries(
     Aggregated in Python to stay database-agnostic; at MVP scale (a few cameras, per-minute
     samples) a month of data is a few hundred thousand rows at most.
     """
-    now = datetime.now(timezone.utc)
-    start = _floor(now - timedelta(hours=hours), bucket) + (timedelta(hours=1) if bucket == "hour" else timedelta(days=1))
-    step = timedelta(hours=1) if bucket == "hour" else timedelta(days=1)
-    buckets = []
-    t = start
-    while t <= now:
-        buckets.append(t)
-        t += step
-    index = {b: i for i, b in enumerate(buckets)}
-    n = len(buckets)
+    buckets, index = _buckets(hours, bucket)
+    start, n = buckets[0], len(buckets)
 
     cam = [CountSample.camera_id == camera_id] if camera_id else []
     counts: dict[str, dict[str, list]] = {}
@@ -97,6 +105,75 @@ def timeseries(
             events.setdefault(etype, [0] * n)[i] += 1
 
     return {"bucket": bucket, "buckets": [b.isoformat() for b in buckets], "counts": counts, "events": events}
+
+
+def _entry_rows(db: Session, start: datetime, camera_id: int | None):
+    cam = [LineCount.camera_id == camera_id] if camera_id else []
+    return db.execute(
+        select(LineCount.camera_id, Camera.name, LineCount.rule_id, LineCount.rule_name, LineCount.bucket_start,
+               LineCount.class_name, LineCount.in_count, LineCount.out_count)
+        .join(Camera, Camera.id == LineCount.camera_id)
+        .where(LineCount.bucket_start >= start, *cam)
+    ).all()
+
+
+@router.get("/api/analytics/entries")
+def entries(
+    hours: int = Query(default=24, ge=1, le=24 * 31),
+    bucket: Literal["hour", "day"] = "hour",
+    camera_id: int | None = None,
+    _: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Entry/exit totals from counting lines: per line, per class, and over time."""
+    buckets, index = _buckets(hours, bucket)
+    n = len(buckets)
+    lines: dict[tuple, dict] = {}
+    total = {"in": 0, "out": 0}
+    for cam_id, cam_name, rule_id, rule_name, b_start, cls, n_in, n_out in _entry_rows(db, buckets[0], camera_id):
+        i = index.get(_floor(b_start, bucket))
+        if i is None:
+            continue
+        # A deleted rule's counts stay grouped under its name.
+        line = lines.setdefault((cam_id, rule_id if rule_id is not None else rule_name), {
+            "camera_id": cam_id, "camera_name": cam_name, "rule_id": rule_id, "rule_name": rule_name,
+            "in_total": 0, "out_total": 0, "by_class": {}, "in": [0] * n, "out": [0] * n})
+        line["in"][i] += n_in
+        line["out"][i] += n_out
+        line["in_total"] += n_in
+        line["out_total"] += n_out
+        c = line["by_class"].setdefault(cls, {"in": 0, "out": 0})
+        c["in"] += n_in
+        c["out"] += n_out
+        total["in"] += n_in
+        total["out"] += n_out
+    return {"bucket": bucket, "buckets": [b.isoformat() for b in buckets], "total": total,
+            "lines": sorted(lines.values(), key=lambda l: (l["camera_name"], l["rule_name"]))}
+
+
+@router.get("/api/analytics/entries.csv")
+def entries_csv(
+    hours: int = Query(default=24, ge=1, le=24 * 31),
+    bucket: Literal["hour", "day"] = "hour",
+    camera_id: int | None = None,
+    _: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """One row per time bucket, camera, line and class."""
+    buckets, _index = _buckets(hours, bucket)
+    rows: dict[tuple, list[int]] = {}
+    for _cam, cam_name, _rid, rule_name, b_start, cls, n_in, n_out in _entry_rows(db, buckets[0], camera_id):
+        r = rows.setdefault((_floor(b_start, bucket), cam_name, rule_name, cls), [0, 0])
+        r[0] += n_in
+        r[1] += n_out
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([f"{bucket}_start_utc", "camera", "line", "class", "in", "out"])
+    for (b, cam_name, rule_name, cls), (n_in, n_out) in sorted(rows.items()):
+        writer.writerow([_cell(v) for v in (b.isoformat(), cam_name, rule_name, cls, n_in, n_out)])
+    name = f"entries-{datetime.now(timezone.utc):%Y%m%d-%H%M}.csv"
+    return Response(buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @router.get("/api/analytics/rules")

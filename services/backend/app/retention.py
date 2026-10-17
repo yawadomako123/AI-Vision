@@ -8,7 +8,7 @@ from pathlib import Path
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from app.models import CountSample, Event, Sighting, UserSession
+from app.models import CountSample, Event, LineCount, Sighting, UserSession
 from app.settings_store import get_settings
 
 log = logging.getLogger(__name__)
@@ -92,6 +92,7 @@ def run_retention(db: Session, storage: Path, now: datetime | None = None) -> di
 
     events = db.execute(delete(Event).where(Event.occurred_at < event_cutoff)).rowcount
     counts = db.execute(delete(CountSample).where(CountSample.bucket_start < count_cutoff)).rowcount
+    counts += db.execute(delete(LineCount).where(LineCount.bucket_start < count_cutoff)).rowcount
     sessions = db.execute(delete(UserSession).where(UserSession.expires_at < now)).rowcount
     db.commit()
     day_dirs = _remove_old_day_dirs(root, event_cutoff)

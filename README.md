@@ -38,11 +38,13 @@ Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard 
 | **Overview** | Cameras online, events in the last 24 h, items needing review, recent alerts |
 | **Events** | Filter, open a snapshot, then **Acknowledge**, **Resolve** or mark **False alarm** with a note (your username is recorded) |
 | **Cameras** | Add, edit, test, enable or disable, and delete cameras; **Live view**; **Rules** opens the rule editor |
-| **Rules** (per camera) | Draw **Zones**, **Tripwires**, **Loitering** and **Occupancy** areas on a current camera image, drag corners to adjust, and set severity, classes, timing and direction. The worker applies changes within 3 s |
-| **Analytics** | People and vehicles in view per hour or day, events by type, CSV export (24 h / 7 d / 30 d, per camera) |
+| **Rules** (per camera) | Draw **Zones**, **Tripwires**, **Loitering** and **Occupancy** areas and **Counter** lines on a current camera image, drag corners to adjust, and set severity, classes, timing and direction. The worker applies changes within 3 s |
+| **Analytics** | People and vehicles in view per hour or day, entries and exits from counter lines, events by type, rule false-alarm rates, CSV export (24 h / 7 d / 30 d, per camera) |
 | **Settings** | System health, data retention, your password, users and roles (admins), audit log (admins) |
 
-**Arm / Disarm:** the switch at the top of the sidebar. While disarmed, zone, tripwire, loitering and occupancy rules don't raise alerts (for example while you're home). Camera-offline alerts keep working, and every arm and disarm is recorded in the audit log. Operators can arm and disarm too.
+**Arm / Disarm:** the switch at the top of the sidebar. While disarmed, zone, tripwire, loitering and occupancy rules don't raise alerts (for example while you're home). Camera-offline alerts keep working, and every arm and disarm is recorded in the audit log. Operators can arm and disarm too. Counter lines keep counting while disarmed, because they never alert.
+
+**Entry/exit counting:** draw a **Counter** line across a door, gate or driveway. An arrow shows which way counts as *in*. It counts people and vehicles crossing each way, without alerts. Totals per line and per hour/day are in **Analytics → Entries and exits**, with CSV export. Only minutes with crossings are stored, so it costs almost nothing.
 
 **Active hours:** in the rule editor, set a rule to *Only at certain times*, for example weekdays 22:00–06:00. Windows that cross midnight run into the next morning. Times are the edge computer's local time.
 
@@ -186,7 +188,7 @@ uv run python ..\..\scripts\e2e.py
 It adds a temporary camera and rules, streams a person walking through a zone and across a tripwire, and checks:
 - the alerts arrive with snapshots over the WebSocket
 - review works and records the reviewer
-- people counts reach analytics, and CSV export works
+- people counts and counter-line entries/exits reach analytics, and CSV export works
 - operators can't change settings
 - losing the stream raises an offline alert
 - the audit log records everything

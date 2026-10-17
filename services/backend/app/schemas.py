@@ -124,7 +124,8 @@ class EventPage(BaseModel):
 
 # --- Rules -------------------------------------------------------------------
 
-RuleType = Literal["zone_entry", "line_crossing", "loitering", "occupancy"]
+RuleType = Literal["zone_entry", "line_crossing", "loitering", "occupancy", "counting_line"]
+LINE_TYPES = {"line_crossing", "counting_line"}
 DetectClass = Literal["person", "bicycle", "car", "motorcycle", "bus", "truck"]
 Point = tuple[float, float]
 
@@ -133,9 +134,9 @@ def _check_points(rule_type: str, points: list[Point]) -> list[Point]:
     for x, y in points:
         if not (0 <= x <= 1 and 0 <= y <= 1):
             raise ValueError("points must be normalized: 0 <= x, y <= 1")
-    if rule_type == "line_crossing" and len(points) != 2:
+    if rule_type in LINE_TYPES and len(points) != 2:
         raise ValueError("a line needs exactly 2 points")
-    if rule_type != "line_crossing" and not 3 <= len(points) <= 50:
+    if rule_type not in LINE_TYPES and not 3 <= len(points) <= 50:
         raise ValueError("a zone needs 3 to 50 points")
     return points
 
@@ -210,6 +211,16 @@ class CountSampleIn(BaseModel):
     class_name: str = Field(max_length=60)
     avg_count: float = Field(ge=0)
     max_count: int = Field(ge=0)
+
+
+class LineCountIn(BaseModel):
+    camera_id: int
+    rule_id: int | None = None
+    rule_name: str = Field(max_length=120)
+    bucket_start: datetime
+    class_name: str = Field(max_length=60)
+    in_count: int = Field(ge=0, le=100_000)
+    out_count: int = Field(ge=0, le=100_000)
 
 
 class SettingsOut(BaseModel):

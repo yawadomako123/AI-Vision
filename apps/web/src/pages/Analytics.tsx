@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 
-import { api } from "../api";
+import { api, type Entries, type EntryLine } from "../api";
 import { DataTable, Legend, LineChart, StackedBars, type Series } from "../components/charts";
 import { Card, Empty, ErrorNote, selectCls } from "../components/ui";
 import { EVENT_TYPES, eventLabel } from "../format";
@@ -78,6 +78,60 @@ function RulePerformanceCard({ hours, cameraId }: { hours: number; cameraId: str
   );
 }
 
+const CLASS_LABEL: Record<string, string> = { person: "people", vehicle: "vehicles" };
+
+function EntriesCard({ entries, labels, tooltipLabels, csvUrl }: {
+  entries: Entries | undefined; labels: string[]; tooltipLabels: string[]; csvUrl: string;
+}) {
+  const lines = entries?.lines ?? [];
+  const sum = (key: "in" | "out") => labels.map((_, i) => lines.reduce((s, l) => s + (l[key][i] ?? 0), 0));
+  const series: Series[] = [
+    { key: "in", label: "In", color: "var(--series-1)", values: sum("in") },
+    { key: "out", label: "Out", color: "var(--series-2)", values: sum("out") },
+  ];
+  const split = (l: EntryLine) => Object.entries(l.by_class)
+    .map(([cls, c]) => `${c.in}/${c.out} ${CLASS_LABEL[cls] ?? cls}`).join(" · ");
+  return (
+    <Card title="Entries and exits" action={lines.length > 0 && (
+      <a className="text-sm font-medium text-accent" href={csvUrl} download>Export (CSV)</a>
+    )}>
+      {lines.length === 0 ? (
+        <Empty>No counts in this period. Draw a <strong>Counter</strong> line across a door or gate in a camera's rules to count people going in and out.</Empty>
+      ) : (
+        <div className="flex flex-col gap-3 p-4">
+          <Legend series={series} />
+          <StackedBars labels={labels} tooltipLabels={tooltipLabels} series={series} label="Entries and exits per time period" />
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-line text-xs text-muted">
+                <tr>
+                  <th className="py-2 pr-3 font-medium">Counting line</th>
+                  <th className="px-3 py-2 font-medium">Camera</th>
+                  <th className="px-3 py-2 text-right font-medium">In</th>
+                  <th className="px-3 py-2 text-right font-medium">Out</th>
+                  <th className="px-3 py-2 font-medium">In/out by type</th>
+                </tr>
+              </thead>
+              <tbody className="tabular divide-y divide-line">
+                {lines.map((l) => (
+                  <tr key={`${l.camera_id}-${l.rule_id ?? l.rule_name}`}>
+                    <td className="py-2 pr-3 font-medium">{l.rule_name}{l.rule_id === null && <span className="text-muted"> (deleted)</span>}</td>
+                    <td className="px-3 py-2">{l.camera_name}</td>
+                    <td className="px-3 py-2 text-right">{l.in_total}</td>
+                    <td className="px-3 py-2 text-right">{l.out_total}</td>
+                    <td className="px-3 py-2 text-muted">{split(l)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <DataTable labels={tooltipLabels} series={series} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function Analytics() {
   const [params, setParams] = useSearchParams();
   const rangeKey = (params.get("range") as RangeKey) in RANGES ? (params.get("range") as RangeKey) : "24h";
@@ -93,6 +147,12 @@ export default function Analytics() {
   const ts = useQuery({
     queryKey: ["timeseries", range.hours, range.bucket, cameraId],
     queryFn: () => api.timeseries(range.hours, range.bucket, cameraId || undefined),
+    placeholderData: keepPreviousData,
+  });
+
+  const entries = useQuery({
+    queryKey: ["entries", range.hours, range.bucket, cameraId],
+    queryFn: () => api.entries(range.hours, range.bucket, cameraId || undefined),
     placeholderData: keepPreviousData,
   });
 
@@ -146,7 +206,9 @@ export default function Analytics() {
               sub={peakPeople > 0 && peakAt >= 0 ? tooltipLabels[peakAt] : undefined} />
         <Stat label="Most vehicles at once" value={Math.max(0, ...vehicles.peak)} />
         <Stat label="Events" value={totalEvents} sub={range.label.toLowerCase()} />
-        <Stat label="Line crossings" value={crossings} sub="entries and exits" />
+        {entries.data?.lines.length
+          ? <Stat label="In / out" value={`${entries.data.total.in} / ${entries.data.total.out}`} sub="counting lines" />
+          : <Stat label="Tripwire alerts" value={crossings} sub="line crossings" />}
       </div>
 
       <Card title="People and vehicles in view (most at once)">
@@ -162,6 +224,10 @@ export default function Analytics() {
           )}
         </div>
       </Card>
+
+      {entries.error && <ErrorNote error={entries.error} />}
+      <EntriesCard entries={entries.data} labels={labels} tooltipLabels={tooltipLabels}
+                   csvUrl={api.entriesCsvUrl(range.hours, range.bucket, cameraId || undefined)} />
 
       <RulePerformanceCard hours={range.hours} cameraId={cameraId} />
 

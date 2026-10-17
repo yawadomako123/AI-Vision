@@ -55,6 +55,10 @@ class ApiClient:
         if samples:
             self._enqueue("/api/internal/counts", samples, f"counts@{samples[0]['bucket_start']}")
 
+    def send_line_counts(self, samples: list[dict]) -> None:
+        if samples:
+            self._enqueue("/api/internal/line-counts", samples, f"line-counts@{samples[0]['bucket_start']}")
+
     def _enqueue(self, path: str, payload: object, label: str) -> None:
         while True:
             try:
