@@ -5,15 +5,17 @@ import { Link } from "react-router";
 import { api, type Camera, type CameraTestResult } from "../api";
 import { useAuth } from "../auth";
 import { CameraStatusBadge } from "../components/Badges";
+import { FindCameras, type Picked } from "../components/FindCameras";
 import { Modal } from "../components/Modal";
 import { Button, Card, Empty, ErrorNote, inputCls } from "../components/ui";
 import { liveViewUrl, timeAgo } from "../format";
 
-function CameraForm({ camera, onDone }: { camera?: Camera; onDone: () => void }) {
+function CameraForm({ camera, picked, onDone }: { camera?: Camera; picked?: Picked; onDone: () => void }) {
   const qc = useQueryClient();
-  const [name, setName] = useState(camera?.name ?? "");
+  const [name, setName] = useState(camera?.name ?? picked?.name ?? "");
   const [location, setLocation] = useState(camera?.location ?? "");
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(picked?.url ?? "");
+  const probe = useMutation({ mutationFn: () => api.probeStream(url.trim()) });
 
   const save = useMutation({
     mutationFn: () => {
@@ -49,8 +51,18 @@ function CameraForm({ camera, onDone }: { camera?: Camera; onDone: () => void })
           Phone via Larix: <code>rtsp://127.0.0.1:8554/cam1</code>. Passwords are encrypted and never shown again.
         </span>
       </label>
+      {probe.data && (
+        <p role="status" className={probe.data.ok ? "text-ok" : "text-bad"}>
+          {probe.data.ok ? `Stream OK: ${probe.data.width}×${probe.data.height}, ${probe.data.codec}` : `Couldn't open the stream: ${probe.data.error}`}
+        </p>
+      )}
       {save.error && <ErrorNote error={save.error} />}
       <div className="flex justify-end gap-2 pt-1">
+        {url.trim() && (
+          <Button className="mr-auto" onClick={() => probe.mutate()} disabled={probe.isPending}>
+            {probe.isPending ? "Checking…" : "Check stream"}
+          </Button>
+        )}
         <Button onClick={onDone}>Cancel</Button>
         <Button type="submit" variant="primary" disabled={save.isPending}>{camera ? "Save" : "Add camera"}</Button>
       </div>
@@ -128,12 +140,19 @@ export default function Cameras() {
   const cameras = useQuery({ queryKey: ["cameras"], queryFn: api.cameras });
   const { isAdmin } = useAuth();
   const [editing, setEditing] = useState<Camera | "new" | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [picked, setPicked] = useState<Picked | undefined>();
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Cameras</h1>
-        {isAdmin && <Button variant="primary" onClick={() => setEditing("new")}>Add camera</Button>}
+        {isAdmin && (
+          <div className="flex gap-2">
+            <Button onClick={() => setFinding(true)}>Find cameras</Button>
+            <Button variant="primary" onClick={() => { setPicked(undefined); setEditing("new"); }}>Add camera</Button>
+          </div>
+        )}
       </div>
       {cameras.error && <ErrorNote error={cameras.error} />}
       {cameras.data?.length === 0 && (
@@ -146,9 +165,12 @@ export default function Cameras() {
       <Modal open={editing !== null} onClose={() => setEditing(null)}
              title={editing === "new" ? "Add camera" : `Edit ${editing?.name ?? ""}`}>
         {editing !== null && (
-          <CameraForm key={editing === "new" ? "new" : editing.id} camera={editing === "new" ? undefined : editing}
-                      onDone={() => setEditing(null)} />
+          <CameraForm key={editing === "new" ? `new-${picked?.url ?? ""}` : editing.id} camera={editing === "new" ? undefined : editing}
+                      picked={editing === "new" ? picked : undefined} onDone={() => setEditing(null)} />
         )}
+      </Modal>
+      <Modal open={finding} onClose={() => setFinding(false)} wide title="Find cameras on your network">
+        {finding && <FindCameras onPick={(p) => { setPicked(p); setFinding(false); setEditing("new"); }} />}
       </Modal>
     </div>
   );

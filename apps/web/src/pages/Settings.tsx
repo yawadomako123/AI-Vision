@@ -330,7 +330,7 @@ function Users() {
 const ACTION_LABELS: Record<string, string> = {
   setup: "Created the first admin", login: "Signed in", login_failed: "Failed sign-in", logout: "Signed out",
   password_change: "Changed password", "user.create": "Added user", "user.update": "Changed user",
-  "camera.create": "Added camera", "camera.update": "Changed camera", "camera.delete": "Deleted camera",
+  "camera.create": "Added camera", "camera.update": "Changed camera", "camera.delete": "Deleted camera", "camera.discover": "Searched for cameras",
   "rule.create": "Added rule", "rule.update": "Changed rule", "rule.delete": "Deleted rule",
   "event.review": "Reviewed event", "events.export": "Exported events", "settings.update": "Changed settings",
   "settings.notifications": "Changed notifications", search: "Searched", "system.arm": "Armed the system", "system.disarm": "Disarmed the system",

@@ -1,5 +1,7 @@
+import asyncio
 import io
 import time
+from urllib.parse import urlsplit
 
 import av
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -7,13 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import discovery
 from app.audit import audit
 from app.auth import current_user, require_admin
 from app.crypto import decrypt, encrypt, mask_url
 from app.db import get_db
 from app.live import hub
 from app.models import Camera, User
-from app.schemas import CameraCreate, CameraOut, CameraTestResult, CameraUpdate
+from app.schemas import CameraCreate, CameraOut, CameraTestResult, CameraUpdate, OnvifStreamsIn, StreamProbeIn
 from app.serializers import camera_out
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
@@ -112,6 +115,45 @@ def delete_camera(camera_id: int, request: Request, admin: User = Depends(requir
 def _redact(exc: Exception, url: str) -> str:
     # Never echo the URL back: FFmpeg errors can include it, with the password.
     return str(exc).replace(url, "<stream>")[:300]
+
+
+# Discovery is a sweep of the whole local network: one at a time is plenty.
+_discovery_lock = asyncio.Lock()
+
+
+@router.post("/discover")
+async def discover_cameras(request: Request, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Find cameras on the local network (ONVIF + RTSP port sweep, ~5 s)."""
+    if _discovery_lock.locked():
+        raise HTTPException(status.HTTP_409_CONFLICT, "A search is already running. Try again in a few seconds.")
+    async with _discovery_lock:
+        result = await discovery.discover()
+    added = {urlsplit(decrypt(c.stream_url_encrypted)).hostname for c in db.scalars(select(Camera))}
+    for dev in result["devices"]:
+        dev["already_added"] = dev["ip"] in added or (dev["ip"] == "127.0.0.1" and "localhost" in added)
+    audit(db, request, admin, "camera.discover", found=len(result["devices"]))
+    db.commit()
+    return result
+
+
+@router.post("/discover/onvif")
+def onvif_streams(body: OnvifStreamsIn, admin: User = Depends(require_admin)):
+    """Ask a discovered camera for its own stream addresses (needs its username and password)."""
+    try:
+        return {"streams": discovery.onvif_streams(body.onvif_url, body.username, body.password)}
+    except discovery.OnvifError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
+
+
+@router.post("/probe", response_model=CameraTestResult)
+def probe_stream(body: StreamProbeIn, _: User = Depends(require_admin)):
+    """Test a stream URL before adding the camera."""
+    try:
+        with _open(body.stream_url) as container:
+            stream, frame = _first_frame(container)
+            return CameraTestResult(ok=True, width=frame.width, height=frame.height, codec=stream.codec_context.name)
+    except Exception as exc:  # noqa: BLE001
+        return CameraTestResult(ok=False, error=_redact(exc, body.stream_url))
 
 
 @router.post("/{camera_id}/test", response_model=CameraTestResult)

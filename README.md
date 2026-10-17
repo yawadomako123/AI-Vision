@@ -99,7 +99,23 @@ npm run build                 # the API serves this build at http://127.0.0.1:80
 
 In the dashboard, add a camera with stream URL `rtsp://127.0.0.1:8554/cam1`. Mount the phone high and angled down, keep it plugged in, and only film places you're allowed to. If the phone can't connect, allow Docker Desktop on *Private* networks in Windows Firewall (TCP 8554).
 
-**Real IP camera:** add it in the dashboard with its RTSP URL (prefer the low-resolution substream), for example `rtsp://user:pass@192.168.1.50:554/stream2`. Passwords are encrypted in the database and never shown again. For live view in the browser, also add the camera as a MediaMTX source (see `infra/mediamtx/mediamtx.yml`) and register `rtsp://127.0.0.1:8554/<path>` instead.
+**Real IP camera: use Find cameras.** Connect the camera to the same router or Wi-Fi as this computer, then go to **Cameras → Find cameras**. It searches the local network in about 5 seconds, two ways:
+- **ONVIF discovery:** most IP cameras (Hikvision, Dahua, Reolink, Tapo, Uniview, Axis, Amcrest…) answer with their name and model. Enter the camera's username and password and press **Get streams**. The camera itself returns its stream addresses, and the lowest-resolution one is marked *recommended* (lightest to analyse).
+- **RTSP port sweep:** this also finds cameras with ONVIF switched off. When the brand is recognised, it offers ready-made substream and main-stream addresses.
+
+Pick one and the **Add camera** form opens pre-filled. Press **Check stream** to confirm it works before saving. Only private (local) addresses are ever contacted. When the API runs inside Docker (`--profile full`), it can't see your home network, so Find cameras only works with the API running natively (`scripts/run-api.ps1`) or with host networking on Linux. If a camera isn't found, switch on ONVIF/RTSP in the camera's own app (Tapo and Reolink have it off by default and need a separate "camera account").
+
+**Adding by hand:** enter the RTSP URL (prefer the low-resolution substream) (prefer the low-resolution substream), for example `rtsp://user:pass@192.168.1.50:554/stream2`. Passwords are encrypted in the database and never shown again. For live view in the browser, also add the camera as a MediaMTX source (see `infra/mediamtx/mediamtx.yml`) and register `rtsp://127.0.0.1:8554/<path>` instead.
+
+**Public live webcams (testing without a camera):** `scripts/live-test.py` runs the whole system on any live stream for a few minutes. It adds a temporary camera with a zone and a counter line, prints status every 30 s, then removes it. It accepts RTSP, HLS (`.m3u8`) or a YouTube live link (resolved with `yt-dlp`; those addresses expire after a few hours, so they suit tests only):
+
+```powershell
+cd services\backend
+uv run python ..\..\scripts\live-test.py "https://www.youtube.com/watch?v=<live id>" --minutes 5
+uv run python ..\..\scripts\live-test.py rtsp://user:pass@192.168.1.64/Streaming/Channels/102   # a real camera
+```
+
+Pick street-level cameras: in wide aerial shots people are only a few pixels tall and too small to detect (vehicles still work). HLS web feeds run about 30 s behind real time, which is how HLS works; RTSP cameras are near real time. Only use public streams the owner publishes for viewing, never unsecured private cameras found online.
 
 **Test clips without a camera:**
 
@@ -169,11 +185,40 @@ To cut false alarms first, use a rule's **Minimum confidence** setting rather th
 - **An IP camera (RTSP/ONVIF):** add it with its substream URL, for example `rtsp://user:pass@192.168.1.50:554/stream2`. Use **Test** on the camera card to check it.
 - **Capacity:** about 2–3 cameras at 3 fps on this laptop's GPU with the Nano model. Use `uv run python -m app.benchmark` to check yours.
 
+## Storage
+
+**Installed software** (measured on the dev laptop):
+
+| Part | Size |
+|---|---|
+| Vision worker (Python + OpenVINO + PyAV) | 1.3 GB |
+| API (Python) | 0.25 GB |
+| Detection model (RF-DETR Nano) | 0.11 GB |
+| Search model (SigLIP, optional) | 0.65 GB |
+| PostgreSQL + MediaMTX + ntfy images (Docker) | 0.6 GB |
+| Dashboard build tools (development only) | 0.1 GB |
+| **Total** | **about 3 GB** (2.4 GB without search) |
+
+The all-in-Docker deployment (`--profile full`) uses about 4.5 GB of images instead.
+
+**Data it keeps.** There's no 24/7 recording, so data grows slowly and every type is capped by a retention setting:
+
+| What | Size each (measured) | Kept (default) |
+|---|---|---|
+| Alert: snapshot + database row | ~40 KB | 30 days |
+| Alert clip (~8 s, low frame rate) | ~40 KB | 7 days, 1 GB cap |
+| Sighting (only with search on) | ~25 KB | 14 days |
+| People/vehicle and entry/exit counts | ~0.3 MB per camera per day | 90 days |
+
+Example: a home camera with 50 alerts and 300 people/vehicles passing a day uses about 4 MB a day of alerts and 8 MB a day of sightings. At the default retention that levels off around **250 MB per camera**, or about 1 GB for four cameras. A busy shopfront with hundreds of alerts a day might reach 1–2 GB per camera. **Settings → System health** shows actual usage and free disk space.
+
+For comparison, continuous 24/7 recording (not part of the MVP) would need roughly 5–15 GB per camera per day even at substream quality.
+
 ## Tests
 
 ```powershell
-cd services\backend; uv run pytest      # 43 API tests: auth, roles, CSRF, rules, events, analytics, retention
-cd services\vision;  uv run pytest      # 18 worker tests: rules engine, counts, ingest, events
+cd services\backend; uv run pytest      # 79 API tests: auth, roles, CSRF, rules, events, analytics, retention, discovery
+cd services\vision;  uv run pytest      # 32 worker tests: rules engine, counts, ingest, events
 ```
 
 **End-to-end test** (whole pipeline: stream, worker, API, live push). It needs the API running and `E2E_ADMIN_USERNAME` / `E2E_ADMIN_PASSWORD` in `.env`:

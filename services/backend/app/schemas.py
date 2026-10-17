@@ -37,6 +37,18 @@ class CameraUpdate(BaseModel):
         return None if v is None else _check_stream_url(v)
 
 
+class StreamProbeIn(BaseModel):
+    stream_url: str = Field(max_length=2000)
+
+    _url = field_validator("stream_url")(_check_stream_url)
+
+
+class OnvifStreamsIn(BaseModel):
+    onvif_url: str = Field(pattern=r"^https?://", max_length=500)
+    username: str = Field(max_length=120)
+    password: str = Field(max_length=200)
+
+
 class CameraOut(BaseModel):
     """Public view: the stream URL is masked, never the real password."""
 

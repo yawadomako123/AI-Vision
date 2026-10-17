@@ -21,6 +21,30 @@ export interface CameraInput {
   enabled?: boolean;
 }
 
+export interface FoundDevice {
+  ip: string;
+  name: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  onvif_url: string | null;
+  rtsp_ports: number[];
+  brand: string | null;
+  suggestions: { label: string; url: string }[];
+  already_added: boolean;
+}
+
+export interface Discovery {
+  subnets: string[];
+  devices: FoundDevice[];
+}
+
+export interface OnvifStream {
+  name: string;
+  width: number;
+  height: number;
+  url: string;
+}
+
 export interface CameraTestResult {
   ok: boolean;
   width: number | null;
@@ -273,6 +297,12 @@ export const api = {
   updateCamera: (id: number, body: Partial<CameraInput>) =>
     request<Camera>(`/api/cameras/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteCamera: (id: number) => request<void>(`/api/cameras/${id}`, { method: "DELETE" }),
+  discoverCameras: () => request<Discovery>("/api/cameras/discover", { method: "POST" }),
+  onvifStreams: (onvif_url: string, username: string, password: string) =>
+    request<{ streams: OnvifStream[] }>("/api/cameras/discover/onvif", {
+      method: "POST", body: JSON.stringify({ onvif_url, username, password }) }),
+  probeStream: (stream_url: string) =>
+    request<CameraTestResult>("/api/cameras/probe", { method: "POST", body: JSON.stringify({ stream_url }) }),
   testCamera: (id: number) => request<CameraTestResult>(`/api/cameras/${id}/test`, { method: "POST" }),
 
   events: (f: EventFilters) => request<EventPage>(`/api/events${query({ ...f })}`),

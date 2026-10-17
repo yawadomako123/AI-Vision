@@ -1,7 +1,8 @@
 """Camera ingest: one background thread per source that always holds only the newest frame.
 
 Stale frames are overwritten, never queued, so a slow detector cannot build up latency.
-Network sources reconnect with exponential backoff.
+Network sources reconnect with exponential backoff. HTTP(S) sources (HLS webcams) deliver video
+in multi-second bursts, so like files they are paced to real time by their timestamps.
 """
 
 import logging
@@ -27,6 +28,7 @@ class FrameReader:
         self.camera_id = camera_id
         self.source = source
         self.is_file = not source.lower().startswith(("rtsp://", "rtsps://", "http://", "https://"))
+        self.is_http = source.lower().startswith(("http://", "https://"))
         self.max_backoff = max_backoff
 
         self.status = "connecting"  # connecting | online | offline
@@ -62,6 +64,17 @@ class FrameReader:
     def _open(self):
         if self.is_file:
             return av.open(self.source)
+        if self.is_http:
+            return av.open(
+                self.source,
+                options={"reconnect": "1", "reconnect_streamed": "1", "reconnect_delay_max": "5",
+                         # HLS: start ~6 segments behind live. Many feeds update their playlist
+                         # in bursts (every 10-20 s); the cushion keeps frames flowing in between,
+                         # at the cost of HLS running ~30 s behind real time (RTSP is unaffected).
+                         "live_start_index": "-6"},
+                # Segments arrive every few seconds: a short read timeout would cut the stream.
+                timeout=(10.0, 20.0),
+            )
         return av.open(
             self.source,
             options={
@@ -80,17 +93,23 @@ class FrameReader:
                 with self._open() as container:
                     stream = container.streams.video[0]
                     stream.thread_type = "AUTO"
-                    # Pace file playback to real time so files behave like cameras.
-                    file_fps = float(stream.average_rate or 15) if self.is_file else None
-                    started = time.monotonic()
+                    # Pace files and bursty HTTP streams to real time so they behave like cameras.
+                    paced = self.is_file or self.is_http
+                    fallback_fps = float(stream.average_rate or 15)
+                    anchor: tuple[float, float] | None = None  # (wall clock, stream time) of the pacing start
 
                     for n, frame in enumerate(container.decode(stream)):
                         if self._stop.is_set():
                             return
-                        if file_fps:
-                            delay = started + n / file_fps - time.monotonic()
+                        if paced:
+                            t = frame.time if frame.time is not None else n / fallback_fps
+                            if anchor is None:
+                                anchor = (time.monotonic(), t)
+                            delay = anchor[0] + (t - anchor[1]) - time.monotonic()
                             if delay > 0:
-                                time.sleep(delay)
+                                self._stop.wait(min(delay, 2.0))
+                            elif delay < -2.0:  # fell behind (network stall): restart pacing here
+                                anchor = (time.monotonic(), t)
                         self._publish(frame.to_ndarray(format="bgr24"))
                         if self.status != "online":
                             log.info("[%s] online (%sx%s)", self.camera_id, frame.width, frame.height)
