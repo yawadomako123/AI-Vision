@@ -6,11 +6,9 @@ pixels on the first frame of each size. Objects are located by their bottom-cent
 see object_positions for the cut-off-at-frame-edge fallback.
 """
 
-import json
 import logging
 from datetime import datetime
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import numpy as np
 import supervision as sv
@@ -264,39 +262,3 @@ def object_positions(detections: sv.Detections, frame_height: int, edge: float =
         class_id=detections.class_id,
         tracker_id=detections.tracker_id,
     )
-
-
-class RulesFile:
-    """config/rules.json, reloaded automatically when it changes on disk.
-
-    Format: {"cam1": [ {rule}, ... ], "cam2": [...]}
-    """
-
-    def __init__(self, path: Path):
-        self.path = path
-        self._mtime: float | None = None
-        self.rules: dict[str, list[Rule]] = {}
-
-    def changed(self) -> bool:
-        """Reload if the file was modified. Returns True when rules changed."""
-        try:
-            mtime = self.path.stat().st_mtime
-        except FileNotFoundError:
-            changed = bool(self.rules)
-            self._mtime, self.rules = None, {}
-            return changed
-        if mtime == self._mtime:
-            return False
-        self._mtime = mtime
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-            self.rules = {cam: [Rule.from_dict(r) for r in rules] for cam, rules in raw.items()}
-            log.info("Loaded rules from %s: %s", self.path.name,
-                     {cam: len(r) for cam, r in self.rules.items()})
-        except (ValueError, KeyError, TypeError) as exc:
-            log.error("Ignoring invalid %s (keeping previous rules): %s", self.path, exc)
-            return False
-        return True
-
-    def for_camera(self, camera_id: str) -> list[Rule]:
-        return self.rules.get(camera_id, [])

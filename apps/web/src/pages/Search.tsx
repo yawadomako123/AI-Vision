@@ -128,7 +128,7 @@ export default function Search() {
     queryKey: ["search", q, hours, cameraId, objectClass],
     queryFn: () => api.search({ q, hours, camera_id: cameraId || undefined, object_class: objectClass || undefined }),
     placeholderData: keepPreviousData,
-    enabled: status.data?.available !== false || !q,
+    enabled: status.data?.enabled === true && (status.data.available || !q),
   });
 
   const update = (changes: Record<string, string | null>) => {
@@ -175,7 +175,12 @@ export default function Search() {
         </div>
       </form>
 
-      {status.data?.available === false && (
+      {status.data?.enabled === false && (
+        <p role="status" className="rounded-lg border border-warn/50 bg-warn/10 px-4 py-2.5 text-sm text-warn">
+          Search is switched off. An admin can turn it on in Settings → Performance (uses about 0.5–0.7 GB of extra memory).
+        </p>
+      )}
+      {status.data?.enabled && !status.data.available && (
         <p role="status" className="rounded-lg border border-warn/50 bg-warn/10 px-4 py-2.5 text-sm text-warn">
           The search model isn't installed yet, so you can browse recent sightings but not search by description.
           Install it once with <code>uv run --group export python ../../scripts/export_siglip.py</code> in <code>services/vision</code>.

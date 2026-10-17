@@ -12,8 +12,6 @@ models/*
 !models/.gitkeep
 samples/*
 !samples/.gitkeep
-config/rules.json
-config/*.tmp
 storage/*
 !storage/.gitkeep
 *.log

@@ -172,6 +172,9 @@ export interface AppSettings {
   clips_enabled: boolean;
   clip_retention_days: number;
   clip_storage_mb: number;
+  sighting_retention_days: number;
+  search_enabled: boolean;
+  analysis_fps: number;
 }
 
 export interface NotificationSettings {
@@ -290,7 +293,7 @@ export const api = {
 
   search: (p: { q?: string; camera_id?: string; object_class?: string; hours?: number }) =>
     request<Sighting[]>(`/api/search${query({ ...p })}`),
-  searchStatus: () => request<{ available: boolean }>("/api/search/status"),
+  searchStatus: () => request<{ available: boolean; enabled: boolean }>("/api/search/status"),
   sighting: (id: number) => request<SightingDetail>(`/api/sightings/${id}`),
   similar: (id: number, hours: number) => request<Sighting[]>(`/api/sightings/${id}/similar${query({ hours })}`),
   arming: () => request<Arming>("/api/arming"),

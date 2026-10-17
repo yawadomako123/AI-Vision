@@ -81,11 +81,48 @@ function Retention() {
               {num("clip_storage_mb", "Clip storage limit (MB, oldest deleted first)", 50, 1000000)}
             </>
           )}
+          {form.search_enabled && num("sighting_retention_days", "Keep search sightings (days)", 1, 365)}
         </fieldset>
         {save.error && <ErrorNote error={save.error} />}
         {save.isSuccess && !dirty && <p role="status" className="text-ok">Saved.</p>}
         {isAdmin && <div><Button type="submit" variant="primary" disabled={!dirty || save.isPending}>Save</Button></div>}
       </form>
+    </Card>
+  );
+}
+
+function Performance() {
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const save = useMutation({
+    mutationFn: (body: Partial<AppSettings>) => api.updateSettings(body),
+    onSuccess: (data) => { qc.setQueryData(["settings"], data); qc.invalidateQueries({ queryKey: ["search-status"] }); },
+  });
+  const s = settings.data;
+  if (!s) return <Card title="Performance"><p className="p-4 text-sm text-muted">Loading…</p></Card>;
+  return (
+    <Card title="Performance">
+      <fieldset disabled={!isAdmin || save.isPending} className="flex flex-col gap-3 p-4 text-sm">
+        <p className="text-muted">Changes apply to the vision worker within a few seconds, no restart needed.</p>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-muted">Analysis speed (frames checked per second, per camera)</span>
+          <select className={selectCls} value={String(s.analysis_fps)} onChange={(e) => save.mutate({ analysis_fps: Number(e.target.value) })}>
+            <option value="1">1: lightest, fine for slow scenes</option>
+            <option value="2">2: light</option>
+            <option value="3">3: balanced (recommended)</option>
+            <option value="5">5: most responsive, heaviest</option>
+          </select>
+        </label>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" className="mt-0.5" checked={s.search_enabled} onChange={(e) => save.mutate({ search_enabled: e.target.checked })} />
+          <span>
+            Plain-English search (“person in a red jacket”)
+            <span className="block text-xs text-muted">Records what the cameras see for the Search page. Uses about 0.5–0.7 GB of extra memory; leave off on weak hardware.</span>
+          </span>
+        </label>
+        {save.error && <ErrorNote error={save.error} />}
+      </fieldset>
     </Card>
   );
 }
@@ -347,6 +384,7 @@ export default function Settings() {
       <div className="grid gap-5 lg:grid-cols-2">
         <Health />
         <Retention />
+        <Performance />
       </div>
       {isAdmin && <Notifications />}
       <ChangePassword />

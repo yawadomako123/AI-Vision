@@ -219,6 +219,8 @@ class SettingsOut(BaseModel):
     clip_retention_days: int
     clip_storage_mb: int
     sighting_retention_days: int
+    search_enabled: bool
+    analysis_fps: float
 
 
 class SettingsUpdate(BaseModel):
@@ -228,6 +230,8 @@ class SettingsUpdate(BaseModel):
     clip_retention_days: int | None = Field(default=None, ge=1, le=365)
     clip_storage_mb: int | None = Field(default=None, ge=50, le=1_000_000)
     sighting_retention_days: int | None = Field(default=None, ge=1, le=365)
+    search_enabled: bool | None = None
+    analysis_fps: float | None = Field(default=None, ge=1, le=5)
 
 
 HTTP_URL = r"^https?://[^\s/$.?#][^\s]*$"

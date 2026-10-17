@@ -1,9 +1,7 @@
-import json
-
 import numpy as np
 import supervision as sv
 
-from app.rule_engine import Rule, RuleEngine, RulesFile
+from app.rule_engine import Rule, RuleEngine
 
 W = H = 1000
 PERSON, CAR = 1, 3
@@ -171,22 +169,6 @@ def test_occupancy_fires_once_and_rearms():
     assert e.update(three, W, H, 1.0) == []  # still over: no repeat
     e.update(dets((1, 0.45, 0.5)), W, H, 2.0)  # back under
     assert len(e.update(three, W, H, 3.0)) == 1
-
-
-def test_rules_file_reload_and_invalid_json(tmp_path):
-    path = tmp_path / "rules.json"
-    rf = RulesFile(path)
-    assert rf.changed() is False and rf.for_camera("cam1") == []
-
-    path.write_text(json.dumps({"cam1": [{"id": "z", "type": "zone_entry", "points": SQUARE}]}))
-    assert rf.changed() is True
-    assert [r.id for r in rf.for_camera("cam1")] == ["z"]
-
-    path.write_text("{not json")
-    import os
-    os.utime(path, (1, 1))  # force a different mtime
-    assert rf.changed() is False  # invalid file keeps previous rules
-    assert [r.id for r in rf.for_camera("cam1")] == ["z"]
 
 
 def test_rule_validation():

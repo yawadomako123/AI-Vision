@@ -15,6 +15,7 @@ from app.db import get_db
 from app.models import Camera, Event, Sighting, User
 from app.routes.internal import require_service_token
 from app.schemas import SightingDetail, SightingIn, SightingOut
+from app.settings_store import get_settings
 from app.search_engine import (
     SearchUnavailable, TextEncoder, decode_embedding, image_relevance, rank, text_relevance,
 )
@@ -92,6 +93,8 @@ def search(
     db: Session = Depends(get_db),
 ):
     """Plain-English search ("person in a white hoodie"). With no query: most recent sightings."""
+    if not get_settings(db)["search_enabled"]:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Search is switched off. An admin can turn it on in Settings.")
     filters = _filters(camera_id, object_class, hours)
     if not q.strip():
         rows = db.scalars(select(Sighting).options(joinedload(Sighting.camera)).where(*filters)
@@ -155,6 +158,7 @@ def similar(sighting_id: int, hours: int = Query(default=24 * 7, ge=1, le=24 * 3
 
 
 @router.get("/api/search/status")
-def search_status(_: User = Depends(current_user)):
-    return {"available": text_encoder.available}
+def search_status(_: User = Depends(current_user), db: Session = Depends(get_db)):
+    """available = model installed; enabled = switched on in Settings."""
+    return {"available": text_encoder.available, "enabled": get_settings(db)["search_enabled"]}
 

@@ -51,11 +51,14 @@ Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard 
 - Clips have their own retention (default 7 days) and a total storage cap (default 1 GB, oldest deleted first).
 - Settings → Data retention can turn clips off.
 
+**Performance:** Settings → Performance sets the *analysis speed* (frames checked per second per camera: 1, 2, 3 or 5). Use 1–2 on a weak PC or with many cameras; 3 is the default. It applies live.
+
 **Search (plain English):** the **Search** page finds anything the cameras saw, not just alerts. Type something like *"person in a white hoodie"* or *"white car"*.
 - **What's saved:** every tracked person or vehicle becomes a *sighting*: a small cut-out, a camera view with the path they walked, first and last seen times, and a SigLIP "meaning fingerprint". That's about 25 KB per sighting, with no video.
 - **Results** are ranked by relevance (strong / possible / weak). Opening one shows the path and any alert clip from that time.
 - **Find similar** lists other sightings that *look* alike, on any camera, in time order. It's a lead based on appearance, not an identification.
 - **Retention:** sightings are kept 14 days (Settings).
+- **Off by default:** it uses about 0.5–0.7 GB of extra memory, so turn it on in **Settings → Performance** once the model is installed. It applies within seconds, no restart. Turning it off frees the memory.
 - **Setup:** search needs the model once:
 
   ```powershell
@@ -242,7 +245,7 @@ Don't run the Docker `api`/`vision` containers alongside the native API and work
 ## Other tools
 
 - **Benchmark:** `uv run python -m app.benchmark` (in `services\vision`) shows how many cameras this machine can handle.
-- **Standalone worker (no API):** leave `API_BASE_URL` empty. The worker then reads `CAMERA_SOURCES` and `config/rules.json` (draw with `uv run python -m app.draw_rules`) and writes `storage/events/`.
+- **Standalone worker (no API):** leave `API_BASE_URL` empty. The worker then reads `CAMERA_SOURCES` and only detects and tracks (no rules): handy for benchmarks and quick tests on a video file. Rules, search and analysis speed are set in the dashboard.
 - **API docs:** http://127.0.0.1:8000/docs
 
 ## Project layout

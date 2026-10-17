@@ -12,6 +12,10 @@ DEFAULTS = {
         "clip_retention_days": 7,
         "clip_storage_mb": 1024,
         "sighting_retention_days": 14,
+        # Plain-English search costs ~0.5-0.7 GB RAM on the edge box, so it's opt-in ("Pro").
+        "search_enabled": False,
+        # Frames analysed per second per camera: lower = lighter on weak hardware.
+        "analysis_fps": 3,
     },
     "system": {
         "armed": True,

@@ -8,9 +8,9 @@ API mode (API_BASE_URL set): cameras are fetched from the API every CAMERA_REFRE
 (added/removed/changed cameras are picked up live), camera status is reported every 5 s and
 events are sent to the API. Events and snapshots are always written to storage/events too.
 
-Rules: in API mode they are drawn in the dashboard and fetched every few seconds; per-minute
-people/vehicle counts are sent for analytics. In standalone mode they come from
-config/rules.json keyed by "cam<id>" (draw with `python -m app.draw_rules`).
+Rules are drawn in the dashboard and fetched every few seconds, together with runtime settings
+(clips, search on/off, analysis speed) which apply without a restart. Standalone mode (no API)
+only detects and tracks: useful for benchmarks and quick tests on a video file.
 """
 
 import argparse
@@ -31,7 +31,7 @@ from app.event_publisher import EventPublisher
 from app.frame_reader import FrameReader
 from app.overlay import draw_rules
 from app.counts import MinuteCounter
-from app.rule_engine import Rule, RuleEngine, RuleHit, RulesFile, object_positions
+from app.rule_engine import Rule, RuleEngine, RuleHit, object_positions
 from app.sightings import SightingCollector, SiglipEmbedder
 
 log = logging.getLogger("vision")
@@ -56,26 +56,48 @@ def main() -> None:
     )
     log.info("Model %s, input %spx, provider %s", settings.model_path.name, detector.resolution, detector.provider)
 
-    # Rules: from the API in API mode (drawn in the dashboard), else from config/rules.json.
-    rules_file = RulesFile(settings.rules_path)
-    if not api:
-        rules_file.changed()
     api_rules: dict[int, list[Rule]] = {}
-
     clip_config = ClipConfig(enabled=settings.clips_enabled)
     cameras: dict[int, dict] = {}
+    # Runtime settings from the dashboard (Settings page); defaults until the API answers.
+    runtime = {"fps": settings.inference_fps, "search": False}
+    embedder: SiglipEmbedder | None = None
+
+    def apply_config(cfg: dict) -> None:
+        nonlocal clip_config, embedder
+        new_clips = ClipConfig(**{k: v for k, v in cfg.get("clips", {}).items() if k in ClipConfig.__dataclass_fields__})
+        if new_clips != clip_config:
+            clip_config = new_clips
+            for cam in cameras.values():
+                cam["clips"].configure(clip_config)
+        fps = float(cfg.get("analysis_fps") or settings.inference_fps)
+        if fps != runtime["fps"]:
+            runtime["fps"] = fps
+            for cam in cameras.values():  # tracker timing depends on the analysis rate
+                cam["tracker"] = sv.ByteTrack(frame_rate=max(1, round(fps)))
+            log.info("Analysis speed: %.1f frames/s per camera", fps)
+        want_search = bool(cfg.get("search_enabled"))
+        if want_search and embedder is None:
+            if (settings.search_model_dir / "vision.onnx").exists():
+                try:
+                    embedder = SiglipEmbedder(settings.search_model_dir, settings.search_device)
+                    log.info("Search on: sightings recorded (%s)", embedder.provider)
+                except Exception:  # a broken model must not stop detection
+                    log.exception("Could not load the search model; search stays off")
+            else:
+                log.warning("Search is switched on but the model isn't installed (scripts/export_siglip.py)")
+        elif not want_search and embedder is not None:
+            embedder = None  # frees the model's memory
+            log.info("Search off: sightings not recorded")
+        runtime["search"] = embedder is not None
+        for cam in cameras.values():
+            cam["sightings"].embedder = embedder
 
     def fetch_api_rules() -> bool:
-        """Refresh api_rules (and clip settings). Returns False if the API couldn't be reached."""
-        nonlocal clip_config
+        """Refresh api_rules and runtime settings. Returns False if the API couldn't be reached."""
         try:
             raw = api.rules()
-            cfg = api.config().get("clips", {})
-            new_cfg = ClipConfig(**{k: v for k, v in cfg.items() if k in ClipConfig.__dataclass_fields__})
-            if new_cfg != clip_config:
-                clip_config = new_cfg
-                for cam in cameras.values():
-                    cam["clips"].configure(clip_config)
+            apply_config(api.config())
         except httpx.HTTPError as exc:
             log.warning("Could not fetch rules from API (%s); keeping current rules", exc)
             return False
@@ -91,7 +113,7 @@ def main() -> None:
         return True
 
     def rules_for(cam_id: int) -> list[Rule]:
-        return api_rules.get(cam_id, []) if api else rules_file.for_camera(f"cam{cam_id}")
+        return api_rules.get(cam_id, [])
 
     def apply_rules() -> None:
         for cam in cameras.values():
@@ -103,13 +125,6 @@ def main() -> None:
     if api:
         fetch_api_rules()
     publisher = EventPublisher(settings.event_storage_path)
-
-    embedder = None
-    if api and (settings.search_model_dir / "vision.onnx").exists():
-        embedder = SiglipEmbedder(settings.search_model_dir, settings.search_device)
-        log.info("Sightings search on (%s)", embedder.provider)
-    elif api:
-        log.info("Sightings search off: run scripts/export_siglip.py to enable it")
 
     def wanted() -> dict[int, str] | None:
         """camera id -> source. None means "couldn't tell", so keep what's running."""
@@ -133,7 +148,7 @@ def main() -> None:
                 log.info("cam%d stopped", cam_id)
         for cam_id, source in desired.items():
             if cam_id not in cameras:
-                cameras[cam_id] = start_camera(cam_id, source, rules_for(cam_id), clip_config)
+                cameras[cam_id] = start_camera(cam_id, source, rules_for(cam_id), clip_config, runtime["fps"])
                 cameras[cam_id]["sightings"] = SightingCollector(cam_id, api.send_sighting if api else None,
                                                                  embedder if api else None)
 
@@ -144,7 +159,6 @@ def main() -> None:
 
     box_annotator = sv.BoxAnnotator()
     label_annotator = sv.LabelAnnotator(text_scale=0.5)
-    interval = 1.0 / settings.inference_fps
     next_rules_check = next_camera_sync = next_status_report = 0.0
 
     try:
@@ -155,7 +169,7 @@ def main() -> None:
                 sync_cameras()
             if now >= next_rules_check:
                 next_rules_check = now + RULES_REFRESH_SECONDS
-                if (api and fetch_api_rules()) or (not api and rules_file.changed()):
+                if api and fetch_api_rules():
                     apply_rules()
             if api and now >= next_status_report:
                 next_status_report = now + STATUS_REPORT_SECONDS
@@ -176,7 +190,7 @@ def main() -> None:
                 frame = cam["reader"].latest(timeout=0)
                 if frame is None:
                     continue
-                cam["next_due"] = now + interval
+                cam["next_due"] = now + 1.0 / runtime["fps"]
                 cam["last_image"] = frame.image
 
                 t0 = time.perf_counter()
@@ -246,7 +260,7 @@ def main() -> None:
             cv2.destroyAllWindows()
 
 
-def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipConfig) -> dict:
+def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipConfig, fps: float) -> dict:
     key = f"cam{cam_id}"
     log.info("%s starting (%d rules)", key, len(rules))  # never log the source: it may contain a password
     clips = ClipRecorder(clip_config)
@@ -259,7 +273,7 @@ def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipC
         "clips": clips,
         "reader": reader.start(),
         # frame_rate = our sampling rate, so lost_track_buffer is measured in sampled frames
-        "tracker": sv.ByteTrack(frame_rate=max(1, round(settings.inference_fps))),
+        "tracker": sv.ByteTrack(frame_rate=max(1, round(fps))),
         "engine": RuleEngine(rules),
         "counter": MinuteCounter(cam_id),
         "started_at": time.time(),

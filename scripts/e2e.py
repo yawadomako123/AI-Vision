@@ -153,6 +153,11 @@ def main() -> int:
 
     was_armed = admin.get("/api/arming").json()["armed"]
     admin.put("/api/arming", json={"armed": True})
+    # Search is opt-in; switch it on for the run (if the model is installed) and restore afterwards.
+    saved_settings = admin.get("/api/settings").json()
+    search_model = admin.get("/api/search/status").json()["available"]
+    if search_model:
+        admin.patch("/api/settings", json={"search_enabled": True})
 
     # Notifications: only against a server we control (never publish test alerts to ntfy.sh).
     ntfy_server = os.environ.get("E2E_NTFY_SERVER")
@@ -304,7 +309,7 @@ def main() -> int:
         check("Stream loss raises camera_offline", bool(offline))
 
         # Sightings + plain-English search (only if the search model is installed).
-        if admin.get("/api/search/status").json()["available"]:
+        if search_model:
             def sightings():
                 found = admin.get("/api/search", params={"camera_id": cam_id, "hours": 1}).json()
                 return [s for s in found if s["object_class"] == "person"] or None
@@ -337,6 +342,7 @@ def main() -> int:
     finally:
         kill_tree(publisher)
         admin.put("/api/arming", json={"armed": was_armed})
+        admin.patch("/api/settings", json={"search_enabled": saved_settings["search_enabled"]})
         if saved_notifications:
             admin.patch("/api/settings/notifications",
                         json={k: v for k, v in saved_notifications.items() if k != "has_token"})

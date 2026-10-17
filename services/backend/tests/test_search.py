@@ -34,6 +34,12 @@ def post(client, camera_id, v, cls="person", minutes_ago=5, track=1, duration=30
     return r.json()["id"]
 
 
+@pytest.fixture(autouse=True)
+def search_on(client):
+    """Search is opt-in; these tests exercise it switched on."""
+    client.patch("/api/settings", json={"search_enabled": True})
+
+
 @pytest.fixture
 def fake_text(monkeypatch):
     from app.routes import sightings
@@ -87,6 +93,13 @@ def test_detail_links_alert_clips(client, camera):
     assert [c["clip_url"] for c in d["clips"]] == ["/media/events/a.mp4"]
 
 
+def test_search_switched_off(client, camera):
+    client.patch("/api/settings", json={"search_enabled": False})
+    r = client.get("/api/search", params={"q": "anything"})
+    assert r.status_code == 409 and "Settings" in r.json()["detail"]
+    assert client.get("/api/internal/config", headers=WORKER).json()["search_enabled"] is False
+
+
 def test_ingest_validation_and_auth(client, anon, camera):
     good = {"camera_id": camera["id"], "track_id": 1, "object_class": "person",
             "first_seen": "2026-10-17T10:00:00Z", "last_seen": "2026-10-17T10:00:30Z", "confidence": 0.9,
@@ -107,7 +120,7 @@ def test_search_unavailable_without_model(client, camera, monkeypatch):
     monkeypatch.setattr(sightings, "text_encoder", TextEncoder(__import__("pathlib").Path("does-not-exist")))
     post(client, camera["id"], vec(0))
     assert client.get("/api/search", params={"q": "anything"}).status_code == 503
-    assert client.get("/api/search/status").json() == {"available": False}
+    assert client.get("/api/search/status").json() == {"available": False, "enabled": True}
 
 
 def test_sighting_retention(client, camera, db_session, tmp_path):

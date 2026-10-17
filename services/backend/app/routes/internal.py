@@ -50,7 +50,9 @@ def worker_rules(db: Session = Depends(get_db)):
 @router.get("/config")
 def worker_config(db: Session = Depends(get_db)):
     """Settings the worker applies at runtime (polled with the rules)."""
-    return {"clips": {"enabled": get_settings(db)["clips_enabled"]}}
+    cfg = get_settings(db)
+    return {"clips": {"enabled": cfg["clips_enabled"]}, "search_enabled": cfg["search_enabled"],
+            "analysis_fps": cfg["analysis_fps"]}
 
 
 @router.post("/counts", status_code=status.HTTP_204_NO_CONTENT)

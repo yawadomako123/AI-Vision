@@ -127,7 +127,8 @@ def test_counts_and_timeseries(client, camera):
 def test_settings(client):
     assert client.get("/api/settings").json() == {
         "event_retention_days": 30, "count_retention_days": 90,
-        "clips_enabled": True, "clip_retention_days": 7, "clip_storage_mb": 1024, "sighting_retention_days": 14}
+        "clips_enabled": True, "clip_retention_days": 7, "clip_storage_mb": 1024, "sighting_retention_days": 14,
+        "search_enabled": False, "analysis_fps": 3}
     assert client.patch("/api/settings", json={"event_retention_days": 7}).json()["event_retention_days"] == 7
     assert client.patch("/api/settings", json={"event_retention_days": 0}).status_code == 422
 
@@ -195,9 +196,12 @@ def test_clip_ingest_retention_and_cap(client, camera, db_session, tmp_path):
 
 
 def test_worker_config(client):
-    assert client.get("/api/internal/config", headers=WORKER).json() == {"clips": {"enabled": True}}
-    client.patch("/api/settings", json={"clips_enabled": False})
-    assert client.get("/api/internal/config", headers=WORKER).json() == {"clips": {"enabled": False}}
+    assert client.get("/api/internal/config", headers=WORKER).json() == {
+        "clips": {"enabled": True}, "search_enabled": False, "analysis_fps": 3}
+    client.patch("/api/settings", json={"clips_enabled": False, "analysis_fps": 2})
+    cfg = client.get("/api/internal/config", headers=WORKER).json()
+    assert cfg["clips"] == {"enabled": False} and cfg["analysis_fps"] == 2
+    assert client.patch("/api/settings", json={"analysis_fps": 10}).status_code == 422
 
 
 def test_system_health(client):
