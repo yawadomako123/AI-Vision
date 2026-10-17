@@ -139,6 +139,22 @@ def _check_points(rule_type: str, points: list[Point]) -> list[Point]:
     return points
 
 
+class Schedule(BaseModel):
+    """Active hours in the edge box's local time. start == end means all day; a window that
+    crosses midnight (22:00-06:00) belongs to the day it starts on."""
+
+    days: list[int] = Field(min_length=1, max_length=7)  # 0 = Monday
+    start: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    end: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
+    @field_validator("days")
+    @classmethod
+    def _days(cls, v: list[int]) -> list[int]:
+        if any(d < 0 or d > 6 for d in v):
+            raise ValueError("days must be 0 (Monday) to 6 (Sunday)")
+        return sorted(set(v))
+
+
 class RuleBase(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     classes: list[DetectClass] = Field(default=["person"], min_length=1)
@@ -148,6 +164,7 @@ class RuleBase(BaseModel):
     dwell_seconds: float = Field(default=20, ge=1, le=86400)
     max_count: int = Field(default=3, ge=0, le=1000)
     min_confidence: float = Field(default=0.0, ge=0, le=1)  # 0 = use the worker's default
+    schedule: Schedule | None = None  # None = always active
     enabled: bool = True
 
 
@@ -171,6 +188,7 @@ class RuleUpdate(BaseModel):
     dwell_seconds: float | None = Field(default=None, ge=1, le=86400)
     max_count: int | None = Field(default=None, ge=0, le=1000)
     min_confidence: float | None = Field(default=None, ge=0, le=1)
+    schedule: Schedule | None = None  # send null to make the rule always active
     enabled: bool | None = None
 
 
@@ -227,6 +245,16 @@ class NotificationSettingsUpdate(BaseModel):
     dashboard_url: str | None = Field(default=None, pattern=r"^(https?://[^\s]+)?$", max_length=300)
     cooldown_seconds: int | None = Field(default=None, ge=0, le=86400)
     token: str | None = Field(default=None, max_length=300)  # "" clears it
+
+
+class ArmingOut(BaseModel):
+    armed: bool
+    changed_by: str | None = None
+    changed_at: datetime | None = None
+
+
+class ArmingIn(BaseModel):
+    armed: bool
 
 
 class NotificationTestResult(BaseModel):

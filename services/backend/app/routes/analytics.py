@@ -2,6 +2,7 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
+import httpx
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -9,15 +10,13 @@ from sqlalchemy.orm import Session
 from app.audit import audit
 from app.auth import current_user, require_admin
 from app.config import settings as app_settings
-from app.db import get_db
-from app.live import worker_contact
-import httpx
-
 from app.crypto import encrypt
+from app.db import get_db
+from app.live import hub, worker_contact
 from app.models import Camera, CountSample, Event, User
 from app.notifier import send as notifier_send
 from app.schemas import (
-    NotificationSettingsOut, NotificationSettingsUpdate, NotificationTestResult, SettingsOut, SettingsUpdate,
+    ArmingIn, ArmingOut, NotificationSettingsOut, NotificationSettingsUpdate, NotificationTestResult, SettingsOut, SettingsUpdate,
 )
 from app.settings_store import get_settings, update_settings
 
@@ -128,6 +127,22 @@ def rule_performance(hours: int = Query(default=24 * 7, ge=1, le=24 * 90), _: Us
         r["false_alarm_rate"] = round(r["false_alarm"] / reviewed, 3) if reviewed else None
         out.append(r)
     return sorted(out, key=lambda r: (-r["total"], r["rule_name"] or ""))
+
+
+@router.get("/api/arming", response_model=ArmingOut)
+def read_arming(_: User = Depends(current_user), db: Session = Depends(get_db)):
+    return get_settings(db, "system")
+
+
+@router.put("/api/arming", response_model=ArmingOut)
+def write_arming(body: ArmingIn, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Any signed-in operator can arm/disarm (e.g. a guard starting a shift). Always audited."""
+    state = update_settings(db, {"armed": body.armed, "changed_by": user.username,
+                                 "changed_at": datetime.now(timezone.utc).isoformat()}, "system")
+    audit(db, request, user, "system.arm" if body.armed else "system.disarm")
+    db.commit()
+    hub.broadcast_from_sync("arming", state)
+    return state
 
 
 @router.get("/api/settings", response_model=SettingsOut)

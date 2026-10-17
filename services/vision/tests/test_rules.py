@@ -49,6 +49,38 @@ def test_zone_entry_ignores_other_classes():
     assert len(e.update(dets((1, 0.5, 0.5, CAR)), W, H, 0.0)) == 1
 
 
+def local_ts(day_offset: int, hour: int, minute: int = 0) -> float:
+    """Local time on Monday 2026-10-12 + day_offset (Mon=0)."""
+    from datetime import datetime, timedelta
+    base = datetime(2026, 10, 12)
+    assert base.weekday() == 0
+    return (base + timedelta(days=day_offset, hours=hour, minutes=minute)).timestamp()
+
+
+def test_schedule_windows():
+    from app.rule_engine import schedule_active
+
+    assert schedule_active(None, local_ts(0, 3))
+    weekdays_9_17 = {"days": [0, 1, 2, 3, 4], "start": "09:00", "end": "17:00"}
+    assert schedule_active(weekdays_9_17, local_ts(0, 9))
+    assert not schedule_active(weekdays_9_17, local_ts(0, 17))
+    assert not schedule_active(weekdays_9_17, local_ts(5, 12))  # Saturday
+    night = {"days": [4], "start": "22:00", "end": "06:00"}  # Friday night
+    assert schedule_active(night, local_ts(4, 23))
+    assert schedule_active(night, local_ts(5, 5, 59))  # still Friday's window on Saturday morning
+    assert not schedule_active(night, local_ts(5, 6))
+    assert not schedule_active(night, local_ts(3, 23))  # Thursday night
+    assert schedule_active({"days": [6], "start": "00:00", "end": "00:00"}, local_ts(6, 15))  # all day Sunday
+
+
+def test_inactive_rule_does_not_fire_and_resets():
+    sched = {"days": [0], "start": "09:00", "end": "10:00"}
+    e = engine(type="zone_entry", schedule=sched)
+    assert e.update(dets((1, 0.5, 0.5)), W, H, local_ts(0, 8, 59)) == []  # inside, but not active yet
+    # Becomes active while the person is already inside: counts as being in the zone now.
+    assert len(e.update(dets((1, 0.5, 0.5)), W, H, local_ts(0, 9, 0))) == 1
+
+
 def test_rule_min_confidence_filters_weak_detections():
     weak = dets((1, 0.5, 0.5))
     weak.confidence[:] = 0.45

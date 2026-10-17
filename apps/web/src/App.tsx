@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink, Navigate, Route, Routes } from "react-router";
 
 import { api } from "./api";
 import { useAuth } from "./auth";
 import { EventToasts } from "./components/Toasts";
+import { timeAgo } from "./format";
 import { useLive } from "./live";
 import Analytics from "./pages/Analytics";
 import Cameras from "./pages/Cameras";
@@ -48,6 +49,47 @@ function Nav() {
   );
 }
 
+function ArmSwitch() {
+  const qc = useQueryClient();
+  const arming = useQuery({ queryKey: ["arming"], queryFn: api.arming });
+  const set = useMutation({
+    mutationFn: (armed: boolean) => api.setArming(armed),
+    onSuccess: (data) => qc.setQueryData(["arming"], data),
+  });
+  if (!arming.data) return null;
+  const armed = arming.data.armed;
+  const who = arming.data.changed_by ? ` by ${arming.data.changed_by} ${timeAgo(arming.data.changed_at)}` : "";
+  return (
+    <button
+      type="button"
+      onClick={() => set.mutate(!armed)}
+      disabled={set.isPending}
+      aria-pressed={armed}
+      title={`${armed ? "Armed" : "Disarmed"}${who}. Click to ${armed ? "disarm (rules stop alerting)" : "arm"}.`}
+      className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${
+        armed ? "border-ok/40 bg-ok/10 text-ok" : "border-warn/50 bg-warn/10 text-warn"
+      }`}
+    >
+      <span className="flex items-center gap-2">
+        <span aria-hidden>{armed ? "🛡️" : "⏸"}</span>
+        {armed ? "Armed" : "Disarmed"}
+      </span>
+      <span className="text-xs font-medium opacity-80">{armed ? "Disarm" : "Arm"}</span>
+    </button>
+  );
+}
+
+function DisarmedBanner() {
+  const arming = useQuery({ queryKey: ["arming"], queryFn: api.arming });
+  if (!arming.data || arming.data.armed) return null;
+  return (
+    <p role="status" className="mb-5 rounded-lg border border-warn/50 bg-warn/10 px-4 py-2.5 text-sm text-warn">
+      <strong>Disarmed</strong>: zone, tripwire, loitering and occupancy rules won't raise alerts until you arm again.
+      Camera offline alerts still work.
+    </p>
+  );
+}
+
 function UserMenu() {
   const { user, logout } = useAuth();
   return (
@@ -72,10 +114,12 @@ export default function App() {
           </span>
           <LiveIndicator />
         </div>
+        <ArmSwitch />
         <div className="overflow-x-auto"><Nav /></div>
         <UserMenu />
       </aside>
       <main className="mx-auto w-full max-w-7xl px-4 py-5 md:px-8 md:py-7">
+        <DisarmedBanner />
         <Routes>
           <Route path="/" element={<Overview />} />
           <Route path="/events" element={<Events />} />

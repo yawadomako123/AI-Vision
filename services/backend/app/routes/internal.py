@@ -37,7 +37,10 @@ def worker_cameras(db: Session = Depends(get_db)):
 
 @router.get("/rules", response_model=dict[int, list[RuleOut]])
 def worker_rules(db: Session = Depends(get_db)):
-    """Enabled rules grouped by camera id."""
+    """Enabled rules grouped by camera id. Empty while the system is disarmed, so no rule can
+    fire; camera health alerts are raised independently and keep working."""
+    if not get_settings(db, "system")["armed"]:
+        return {}
     grouped: dict[int, list[RuleOut]] = {}
     for rule in db.scalars(select(DetectionRule).where(DetectionRule.enabled).order_by(DetectionRule.id)):
         grouped.setdefault(rule.camera_id, []).append(RuleOut.model_validate(rule))

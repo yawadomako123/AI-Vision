@@ -14,6 +14,7 @@ const TYPES: { type: RuleType; label: string; hint: string; color: string }[] = 
 ];
 const typeInfo = (t: RuleType) => TYPES.find((x) => x.type === t)!;
 const CLASSES = ["person", "bicycle", "car", "motorcycle", "bus", "truck"];
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const clamp = (v: number) => Math.min(1, Math.max(0, v));
 const round = (p: Point): Point => [Math.round(p[0] * 10000) / 10000, Math.round(p[1] * 10000) / 10000];
@@ -106,6 +107,46 @@ function RuleForm({ rule, canEdit, onDeleted }: { rule: Rule; canEdit: boolean; 
               </label>
             ))}
           </div>
+        </fieldset>
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-xs font-medium text-muted">Active</legend>
+          <select className={selectCls} aria-label="When the rule is active" value={form.schedule ? "scheduled" : "always"}
+                  onChange={(e) => set("schedule", e.target.value === "always" ? null
+                    : { days: [0, 1, 2, 3, 4, 5, 6], start: "22:00", end: "06:00" })}>
+            <option value="always">Always</option>
+            <option value="scheduled">Only at certain times</option>
+          </select>
+          {form.schedule && (
+            <>
+              <div className="flex flex-wrap gap-1" role="group" aria-label="Days">
+                {DAYS.map((d, i) => {
+                  const on = form.schedule!.days.includes(i);
+                  return (
+                    <button key={d} type="button" aria-pressed={on}
+                            onClick={() => {
+                              const days = on ? form.schedule!.days.filter((x) => x !== i) : [...form.schedule!.days, i].sort();
+                              if (days.length) set("schedule", { ...form.schedule!, days });
+                            }}
+                            className={`rounded-md border px-2 py-1 text-xs font-medium ${on ? "border-accent bg-accent/15 text-accent" : "border-line text-muted"}`}>
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2">
+                <input className={inputCls} type="time" aria-label="From" value={form.schedule.start}
+                       onChange={(e) => set("schedule", { ...form.schedule!, start: e.target.value })} required />
+                <span className="text-muted">to</span>
+                <input className={inputCls} type="time" aria-label="Until" value={form.schedule.end}
+                       onChange={(e) => set("schedule", { ...form.schedule!, end: e.target.value })} required />
+              </div>
+              <p className="text-xs text-muted">
+                {form.schedule.start === form.schedule.end ? "All day on the selected days."
+                  : form.schedule.start > form.schedule.end ? "Overnight: runs into the next morning."
+                  : "Same-day window."} Times are the edge computer's local time.
+              </p>
+            </>
+          )}
         </fieldset>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} />

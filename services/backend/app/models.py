@@ -78,6 +78,7 @@ class DetectionRule(Base):
     dwell_seconds: Mapped[float] = mapped_column(Float, default=20)
     max_count: Mapped[int] = mapped_column(default=3)
     min_confidence: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
+    schedule: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # None = always active
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)

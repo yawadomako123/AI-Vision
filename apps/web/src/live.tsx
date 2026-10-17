@@ -55,6 +55,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             qc.invalidateQueries({ queryKey: ["cameras"] });
             qc.invalidateQueries({ queryKey: ["summary"] });
             break;
+          case "arming":
+            qc.setQueryData(["arming"], data);
+            break;
           case "rules":
             qc.invalidateQueries({ queryKey: ["rules", data.camera_id] });
             break;

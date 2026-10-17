@@ -52,6 +52,39 @@ def test_rule_min_confidence_roundtrip(client, camera):
     assert feed[str(camera["id"])][0]["min_confidence"] == 0.6
 
 
+def test_rule_schedule(client, camera):
+    url = f"/api/cameras/{camera['id']}/rules"
+    night = {"days": [4, 0, 4], "start": "22:00", "end": "06:00"}
+    rule = client.post(url, json={**ZONE, "schedule": night}).json()
+    assert rule["schedule"] == {"days": [0, 4], "start": "22:00", "end": "06:00"}  # de-duplicated, sorted
+    assert client.get("/api/internal/rules", headers=WORKER).json()[str(camera["id"])][0]["schedule"]["start"] == "22:00"
+    for bad in ({"days": [7], "start": "22:00", "end": "06:00"}, {"days": [], "start": "22:00", "end": "06:00"},
+                {"days": [1], "start": "24:00", "end": "06:00"}, {"days": [1], "start": "9:00", "end": "10:00"}):
+        assert client.post(url, json={**ZONE, "schedule": bad}).status_code == 422, bad
+    cleared = client.patch(f"/api/rules/{rule['id']}", json={"schedule": None}).json()
+    assert cleared["schedule"] is None
+
+
+def test_arming(client, operator, camera):
+    client.post(f"/api/cameras/{camera['id']}/rules", json=ZONE)
+    assert client.get("/api/arming").json()["armed"] is True
+    assert len(client.get("/api/internal/rules", headers=WORKER).json()) == 1
+
+    r = operator.put("/api/arming", json={"armed": False}).json()  # operators may disarm
+    assert r["armed"] is False and r["changed_by"] == "olivia"
+    assert client.get("/api/internal/rules", headers=WORKER).json() == {}  # worker gets no rules
+    actions = [a["action"] for a in client.get("/api/audit").json()["items"]]
+    assert "system.disarm" in actions
+
+    client.put("/api/arming", json={"armed": True})
+    assert len(client.get("/api/internal/rules", headers=WORKER).json()) == 1
+
+
+def test_arming_requires_login(anon):
+    assert anon.get("/api/arming").status_code == 401
+    assert anon.put("/api/arming", json={"armed": False}).status_code == 401
+
+
 def test_rule_performance(client, camera):
     for i, status in enumerate(["false_alarm", "false_alarm", "resolved", None]):
         e = client.post("/api/internal/events", headers=WORKER,

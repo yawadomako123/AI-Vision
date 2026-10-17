@@ -8,6 +8,7 @@ see object_positions for the cut-off-at-frame-edge fallback.
 
 import json
 import logging
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -36,6 +37,8 @@ class Rule:
     dwell_seconds: float = 20.0  # loitering
     max_count: int = 3  # occupancy: alert when count > max_count
     min_confidence: float = 0.0  # ignore detections below this for this rule (0 = worker default)
+    # None = always active, else {"days": [0..6] (Mon=0), "start": "HH:MM", "end": "HH:MM"}
+    schedule: dict | None = None
     enabled: bool = True
 
     @classmethod
@@ -59,11 +62,36 @@ class Rule:
             dwell_seconds=float(d.get("dwell_seconds", 20)),
             max_count=int(d.get("max_count", 3)),
             min_confidence=float(d.get("min_confidence") or 0.0),
+            schedule=d.get("schedule") or None,
             enabled=bool(d.get("enabled", True)),
         )
 
     def pixel_points(self, width: int, height: int) -> np.ndarray:
         return np.array([[x * width, y * height] for x, y in self.points]).round().astype(int)
+
+
+def _minutes(hhmm: str) -> int:
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+def schedule_active(schedule: dict | None, ts: float) -> bool:
+    """Is a rule with this schedule active at unix time `ts` (in this machine's local time)?
+
+    start == end means all day. A window that crosses midnight (22:00-06:00) belongs to the day
+    it starts on, so "Fri 22:00-06:00" is active until Saturday 06:00.
+    """
+    if not schedule:
+        return True
+    t = datetime.fromtimestamp(ts)
+    days = set(schedule.get("days", range(7)))
+    now, start, end = t.hour * 60 + t.minute, _minutes(schedule["start"]), _minutes(schedule["end"])
+    today, yesterday = t.weekday(), (t.weekday() - 1) % 7
+    if start == end:
+        return today in days
+    if start < end:
+        return today in days and start <= now < end
+    return (today in days and now >= start) or (yesterday in days and now < end)
 
 
 @dataclass
@@ -94,6 +122,12 @@ class _RuleState:
         self.over_capacity = False
         self.last_fired: dict[object, float] = {}  # cooldown key -> time
 
+    def reset(self) -> None:
+        self.inside.clear()
+        self.entered_at.clear()
+        self.loiter_reported.clear()
+        self.over_capacity = False
+
     def cooled_down(self, key: object, now: float) -> bool:
         last = self.last_fired.get(key)
         if last is not None and now - last < self.rule.cooldown_seconds:
@@ -123,6 +157,9 @@ class RuleEngine:
         positions = object_positions(detections, height)
         hits: list[RuleHit] = []
         for state in self._states:
+            if not schedule_active(state.rule.schedule, now):
+                state.reset()  # so nobody "enters" or has been "loitering" the moment it switches on
+                continue
             mask = np.isin(names, list(state.rule.classes)) if len(names) else np.zeros(0, bool)
             if state.rule.min_confidence and len(names):
                 mask &= detections.confidence >= state.rule.min_confidence

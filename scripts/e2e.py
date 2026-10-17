@@ -151,11 +151,17 @@ def main() -> int:
     live.start()
     check("Live updates connect (WebSocket)", live.connected.wait(10))
 
+    was_armed = admin.get("/api/arming").json()["armed"]
+    admin.put("/api/arming", json={"armed": True})
+
     # Notifications: only against a server we control (never publish test alerts to ntfy.sh).
     ntfy_server = os.environ.get("E2E_NTFY_SERVER")
-    saved_notifications = admin.get("/api/settings/notifications").json() if ntfy_server else None
+    # Always save and restore the real settings: test alerts must never reach the owner's phone.
+    saved_notifications = admin.get("/api/settings/notifications").json()
     ntfy_topic = f"aivision-e2e-{os.urandom(6).hex()}"
-    if ntfy_server:
+    if not ntfy_server:
+        admin.patch("/api/settings/notifications", json={"enabled": False})
+    else:
         admin.patch("/api/settings/notifications", json={
             "enabled": True, "server": ntfy_server, "topic": ntfy_topic, "min_severity": "high",
             "include_snapshot": True, "cooldown_seconds": 0})
@@ -239,6 +245,20 @@ def main() -> int:
         csv = admin.get("/api/events/export.csv", params={"camera_id": cam_id})
         check("CSV export includes the events", csv.status_code == 200 and "E2E zone" in csv.text)
 
+        # Disarm: with the person still walking through, rule alerts must stop; re-arming resumes them.
+        def rule_event_count() -> int:
+            items = admin.get("/api/events", params={"camera_id": cam_id, "limit": 200}).json()["items"]
+            return sum(e["event_type"] in ("zone_entry", "line_crossing") for e in items)
+
+        admin.put("/api/arming", json={"armed": False})
+        time.sleep(8)  # worker refreshes rules every 3 s; let in-flight events land
+        before = rule_event_count()
+        time.sleep(25)  # the clip loops every 16 s, so the person crosses again in this window
+        check("Disarmed: no rule alerts while someone walks through", rule_event_count() == before)
+        admin.put("/api/arming", json={"armed": True})
+        resumed = wait_for(lambda: rule_event_count() > before, 60)
+        check("Re-armed: rule alerts resume", bool(resumed))
+
         # Operator: can review, cannot administer.
         users = {u["username"]: u for u in admin.get("/api/users").json()}
         op_password = ENV["E2E_ADMIN_PASSWORD"] + "-op"
@@ -266,6 +286,7 @@ def main() -> int:
               {"camera.create", "rule.create", "event.review", "events.export"} <= actions)
     finally:
         kill_tree(publisher)
+        admin.put("/api/arming", json={"armed": was_armed})
         if saved_notifications:
             admin.patch("/api/settings/notifications",
                         json={k: v for k, v in saved_notifications.items() if k != "has_token"})

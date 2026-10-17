@@ -42,6 +42,10 @@ Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard 
 | **Analytics** | People and vehicles in view per hour or day, events by type, CSV export (24 h / 7 d / 30 d, per camera) |
 | **Settings** | System health, data retention, your password, users and roles (admins), audit log (admins) |
 
+**Arm / Disarm:** the switch at the top of the sidebar. While disarmed, zone, tripwire, loitering and occupancy rules don't raise alerts (for example while you're home). Camera-offline alerts keep working, and every arm and disarm is recorded in the audit log. Operators can arm and disarm too.
+
+**Active hours:** in the rule editor, set a rule to *Only at certain times*, for example weekdays 22:00–06:00. Windows that cross midnight run into the next morning. Times are the edge computer's local time.
+
 **Roles:** *admins* manage cameras, rules, users and settings. *Operators* watch and review events. New alerts pop up live, and everything updates without reloading.
 
 **Drawing tips:** people are located by their feet (the bottom of their box), so draw zones on the floor. If a person is cut off by the bottom of the image, the middle of the box is used instead.

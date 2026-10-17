@@ -286,7 +286,7 @@ const ACTION_LABELS: Record<string, string> = {
   "camera.create": "Added camera", "camera.update": "Changed camera", "camera.delete": "Deleted camera",
   "rule.create": "Added rule", "rule.update": "Changed rule", "rule.delete": "Deleted rule",
   "event.review": "Reviewed event", "events.export": "Exported events", "settings.update": "Changed settings",
-  "settings.notifications": "Changed notifications",
+  "settings.notifications": "Changed notifications", "system.arm": "Armed the system", "system.disarm": "Disarmed the system",
 };
 
 function AuditLog() {

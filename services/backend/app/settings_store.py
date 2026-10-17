@@ -9,6 +9,11 @@ DEFAULTS = {
         "event_retention_days": 30,
         "count_retention_days": 90,
     },
+    "system": {
+        "armed": True,
+        "changed_by": None,
+        "changed_at": None,
+    },
     "notifications": {
         "enabled": False,
         "server": "https://ntfy.sh",

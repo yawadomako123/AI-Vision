@@ -106,7 +106,21 @@ export interface Rule {
   dwell_seconds: number;
   max_count: number;
   min_confidence: number;
+  schedule: Schedule | null;
   enabled: boolean;
+}
+
+/** Active hours in the edge box's local time; days 0 = Monday. start == end means all day. */
+export interface Schedule {
+  days: number[];
+  start: string;
+  end: string;
+}
+
+export interface Arming {
+  armed: boolean;
+  changed_by: string | null;
+  changed_at: string | null;
 }
 
 export interface RulePerformance {
@@ -251,6 +265,8 @@ export const api = {
   deleteRule: (id: number) => request<void>(`/api/rules/${id}`, { method: "DELETE" }),
   frameUrl: (cameraId: number) => `/api/cameras/${cameraId}/frame?t=${Date.now()}`,
 
+  arming: () => request<Arming>("/api/arming"),
+  setArming: (armed: boolean) => request<Arming>("/api/arming", { method: "PUT", body: JSON.stringify({ armed }) }),
   settings: () => request<AppSettings>("/api/settings"),
   updateSettings: (body: Partial<AppSettings>) =>
     request<AppSettings>("/api/settings", { method: "PATCH", body: JSON.stringify(body) }),
