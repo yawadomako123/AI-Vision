@@ -46,6 +46,7 @@ export interface VisionEvent {
   confidence: number | null;
   details: Record<string, unknown>;
   snapshot_url: string | null;
+  clip_url: string | null;
   status: EventStatus;
   note: string | null;
   reviewed_by: string | null;
@@ -149,6 +150,9 @@ export interface Timeseries {
 export interface AppSettings {
   event_retention_days: number;
   count_retention_days: number;
+  clips_enabled: boolean;
+  clip_retention_days: number;
+  clip_storage_mb: number;
 }
 
 export interface NotificationSettings {

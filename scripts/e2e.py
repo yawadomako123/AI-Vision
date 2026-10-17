@@ -220,6 +220,29 @@ def main() -> int:
                   f"{len(snap.content)} bytes" if snap else "no snapshot")
             check("Snapshot is refused without a session",
                   httpx.get(API + entry["snapshot_url"]).status_code == 401 if entry["snapshot_url"] else False)
+            if entry["clip_url"]:
+                def clip_ready():
+                    r = admin.get(entry["clip_url"])
+                    return r if r.status_code == 200 else None
+                clip = wait_for(clip_ready, 45, interval=3)
+                detail = "not produced"
+                ok = False
+                if clip:
+                    import io
+
+                    import av
+                    with av.open(io.BytesIO(clip.content)) as c:
+                        v = c.streams.video[0]
+                        frames = sum(1 for _ in c.decode(v))
+                        seconds = frames / float(v.average_rate or 6)
+                    kb = len(clip.content) / 1024
+                    ok = clip.headers["content-type"] == "video/mp4" and kb < 1024 and seconds >= 5
+                    detail = f"{seconds:.0f} s, {v.width}x{v.height}, {kb:.0f} KB"
+                check("Alert has a short, small video clip", ok, detail)
+                check("Clip is refused without a session", httpx.get(API + entry["clip_url"]).status_code == 401)
+            else:
+                check("Alert has a short, small video clip", False, "no clip_url on the event")
+
             pushed = [m for m in live.messages if m["type"] == "event" and m["data"]["id"] == entry["id"]]
             check("Event was pushed live to the dashboard", bool(pushed))
 

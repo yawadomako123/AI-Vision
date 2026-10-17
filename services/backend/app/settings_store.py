@@ -8,6 +8,9 @@ DEFAULTS = {
     "general": {
         "event_retention_days": 30,
         "count_retention_days": 90,
+        "clips_enabled": True,
+        "clip_retention_days": 7,
+        "clip_storage_mb": 1024,
     },
     "system": {
         "armed": True,

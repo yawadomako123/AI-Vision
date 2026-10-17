@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 
-import { api, type NotificationSettings, type NotificationUpdate, type Role } from "../api";
+import { api, type AppSettings, type NotificationSettings, type NotificationUpdate, type Role } from "../api";
 import { useAuth } from "../auth";
 import { Button, Card, ErrorNote, inputCls, selectCls } from "../components/ui";
 import { formatDateTime, timeAgo } from "../format";
@@ -47,30 +47,40 @@ function Retention() {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
-  const [events, setEvents] = useState(30);
-  const [counts, setCounts] = useState(90);
-  useEffect(() => {
-    if (settings.data) { setEvents(settings.data.event_retention_days); setCounts(settings.data.count_retention_days); }
-  }, [settings.data]);
+  const [form, setForm] = useState<AppSettings | null>(null);
+  useEffect(() => { if (settings.data) setForm(settings.data); }, [settings.data]);
   const save = useMutation({
-    mutationFn: () => api.updateSettings({ event_retention_days: events, count_retention_days: counts }),
+    mutationFn: () => api.updateSettings(form!),
     onSuccess: (data) => qc.setQueryData(["settings"], data),
   });
-  const dirty = settings.data && (events !== settings.data.event_retention_days || counts !== settings.data.count_retention_days);
+  if (!form) return <Card title="Data retention"><p className="p-4 text-sm text-muted">Loading…</p></Card>;
+  const set = <K extends keyof AppSettings>(k: K, v: AppSettings[K]) => setForm({ ...form, [k]: v });
+  const dirty = JSON.stringify(form) !== JSON.stringify(settings.data);
+  const num = (k: keyof AppSettings, label: string, min: number, max: number) => (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-muted">{label}</span>
+      <input className={inputCls} type="number" min={min} max={max} value={form[k] as number}
+             onChange={(e) => set(k, Number(e.target.value) as never)} />
+    </label>
+  );
 
   return (
     <Card title="Data retention">
       <form className="flex flex-col gap-3 p-4 text-sm" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
         <p className="text-muted">Older data is deleted automatically every hour. Snapshots are deleted with their events.</p>
         <fieldset disabled={!isAdmin} className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Keep events and snapshots (days)</span>
-            <input className={inputCls} type="number" min={1} max={3650} value={events} onChange={(e) => setEvents(Number(e.target.value))} />
+          {num("event_retention_days", "Keep events and snapshots (days)", 1, 3650)}
+          {num("count_retention_days", "Keep people/vehicle counts (days)", 1, 3650)}
+          <label className="flex items-center gap-2 sm:col-span-2">
+            <input type="checkbox" checked={form.clips_enabled} onChange={(e) => set("clips_enabled", e.target.checked)} />
+            Save a short clip (~8 s, low frame rate) with each alert
           </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Keep people/vehicle counts (days)</span>
-            <input className={inputCls} type="number" min={1} max={3650} value={counts} onChange={(e) => setCounts(Number(e.target.value))} />
-          </label>
+          {form.clips_enabled && (
+            <>
+              {num("clip_retention_days", "Keep clips (days)", 1, 365)}
+              {num("clip_storage_mb", "Clip storage limit (MB, oldest deleted first)", 50, 1000000)}
+            </>
+          )}
         </fieldset>
         {save.error && <ErrorNote error={save.error} />}
         {save.isSuccess && !dirty && <p role="status" className="text-ok">Saved.</p>}

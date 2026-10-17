@@ -104,6 +104,7 @@ class EventOut(BaseModel):
     confidence: float | None
     details: dict
     snapshot_url: str | None = None
+    clip_url: str | None = None
     status: str
     note: str | None
     reviewed_by: str | None
@@ -214,11 +215,17 @@ class CountSampleIn(BaseModel):
 class SettingsOut(BaseModel):
     event_retention_days: int
     count_retention_days: int
+    clips_enabled: bool
+    clip_retention_days: int
+    clip_storage_mb: int
 
 
 class SettingsUpdate(BaseModel):
     event_retention_days: int | None = Field(default=None, ge=1, le=3650)
     count_retention_days: int | None = Field(default=None, ge=1, le=3650)
+    clips_enabled: bool | None = None
+    clip_retention_days: int | None = Field(default=None, ge=1, le=365)
+    clip_storage_mb: int | None = Field(default=None, ge=50, le=1_000_000)
 
 
 HTTP_URL = r"^https?://[^\s/$.?#][^\s]*$"

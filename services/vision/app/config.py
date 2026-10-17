@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     detect_classes: str = "person,bicycle,car,motorcycle,bus,truck"
 
     event_storage_path: Path = REPO_ROOT / "storage" / "events"
+    # Short evidence clips around alerts (standalone mode; in API mode the dashboard setting wins).
+    clips_enabled: bool = True
     rules_path: Path = REPO_ROOT / "config" / "rules.json"
     # Raise camera_offline only after this long, so brief Wi-Fi blips don't alert.
     offline_alert_seconds: float = 15.0

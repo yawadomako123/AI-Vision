@@ -46,6 +46,11 @@ Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard 
 
 **Active hours:** in the rule editor, set a rule to *Only at certain times*, for example weekdays 22:00–06:00. Windows that cross midnight run into the next morning. Times are the edge computer's local time.
 
+**Clips:** each rule alert saves a short clip (about 3 s before to 5 s after, 6 fps, ≤640 px, usually 30–300 KB), shown in the event dialog with a Clip / Snapshot toggle.
+- Alerts that fire close together share one clip, and nothing is recorded continuously.
+- Clips have their own retention (default 7 days) and a total storage cap (default 1 GB, oldest deleted first).
+- Settings → Data retention can turn clips off.
+
 **Roles:** *admins* manage cameras, rules, users and settings. *Operators* watch and review events. New alerts pop up live, and everything updates without reloading.
 
 **Drawing tips:** people are located by their feet (the bottom of their box), so draw zones on the floor. If a person is cut off by the bottom of the image, the middle of the box is used instead.

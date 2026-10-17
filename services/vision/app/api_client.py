@@ -33,6 +33,11 @@ class ApiClient:
         r.raise_for_status()
         return {int(cam): rules for cam, rules in r.json().items()}
 
+    def config(self) -> dict:
+        r = self.http.get("/api/internal/config")
+        r.raise_for_status()
+        return r.json()
+
     def report_status(self, camera_id: int, status: str, last_frame_at: str | None, infer_fps: float | None) -> None:
         try:
             self.http.post(f"/api/internal/cameras/{camera_id}/status",

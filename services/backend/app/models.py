@@ -51,6 +51,7 @@ class Event(Base):
     confidence: Mapped[float | None] = mapped_column(Float)
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     snapshot_path: Mapped[str | None] = mapped_column(Text)
+    clip_path: Mapped[str | None] = mapped_column(Text)
     # Operator review workflow.
     status: Mapped[str] = mapped_column(String(20), default="unreviewed", index=True)
     note: Mapped[str | None] = mapped_column(Text)

@@ -30,7 +30,7 @@ class EventPublisher:
         self.root.mkdir(parents=True, exist_ok=True)
         self.log_path = self.root / "events.jsonl"
 
-    def publish(self, camera_id: str, hit: RuleHit, frame: np.ndarray | None, rules=()) -> dict:
+    def publish(self, camera_id: str, hit: RuleHit, frame: np.ndarray | None, rules=(), clips=None) -> dict:
         ts = datetime.fromtimestamp(hit.occurred_at, tz=timezone.utc)
         event_id = f"{ts:%Y%m%dT%H%M%S}_{camera_id}_{hit.event_type}_{uuid.uuid4().hex[:6]}"
 
@@ -44,6 +44,11 @@ class EventPublisher:
             cv2.imwrite(str(path), img, [cv2.IMWRITE_JPEG_QUALITY, 85])
             snapshot = rel.as_posix()
 
+        clip = None
+        if clips is not None and hit.rule is not None:
+            started = clips.start(self.root / f"{ts:%Y/%m/%d}" / f"{event_id}.mp4", hit.occurred_at)
+            clip = started.relative_to(self.root).as_posix() if started else None
+
         event = {
             "id": event_id,
             "camera_id": camera_id,
@@ -56,7 +61,8 @@ class EventPublisher:
                 if hit.class_name else None
             ),
             "details": hit.details,
-            "evidence": {"snapshot_path": snapshot} if snapshot else None,
+            "evidence": ({"snapshot_path": snapshot, **({"clip_path": clip} if clip else {})}
+                         if snapshot or clip else None),
             "status": "unreviewed",
         }
         with self.log_path.open("a", encoding="utf-8") as f:

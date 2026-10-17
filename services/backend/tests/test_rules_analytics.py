@@ -125,7 +125,9 @@ def test_counts_and_timeseries(client, camera):
 # --- settings, retention, system, CSV ------------------------------------------
 
 def test_settings(client):
-    assert client.get("/api/settings").json() == {"event_retention_days": 30, "count_retention_days": 90}
+    assert client.get("/api/settings").json() == {
+        "event_retention_days": 30, "count_retention_days": 90,
+        "clips_enabled": True, "clip_retention_days": 7, "clip_storage_mb": 1024}
     assert client.patch("/api/settings", json={"event_retention_days": 7}).json()["event_retention_days"] == 7
     assert client.patch("/api/settings", json={"event_retention_days": 0}).status_code == 422
 
@@ -151,6 +153,51 @@ def test_retention_removes_old_events_and_snapshots(client, camera, db_session, 
     assert not (tmp_path / old_dir).exists()
     assert (tmp_path / new_dir / "new.jpg").exists()
     assert client.get("/api/events").json()["total"] == 1
+
+
+def test_clip_ingest_retention_and_cap(client, camera, db_session, tmp_path):
+    from app.retention import run_retention
+
+    now = datetime.now(timezone.utc)
+    day = f"{now:%Y/%m/%d}"
+    (tmp_path / day).mkdir(parents=True)
+
+    def add(ext, age_days, size_kb, shared_with=None):
+        rel = shared_with or f"{day}/{ext}.mp4"
+        if not shared_with:
+            (tmp_path / rel).write_bytes(b"x" * size_kb * 1024)
+        r = client.post("/api/internal/events", headers=WORKER, json=event_payload(
+            camera["id"], ext_id=ext, occurred_at=(now - timedelta(days=age_days)).isoformat(),
+            evidence={"snapshot_path": None, "clip_path": rel}))
+        return r.json()
+
+    e = add("fresh", 0, 100)
+    assert e["clip_url"] == f"/media/events/{day}/fresh.mp4"
+    add("shared", 0, 0, shared_with=f"{day}/fresh.mp4")  # two alerts, one clip
+    add("week_old", 8, 100)  # older than the 7-day clip retention, newer than 30-day events
+    add("big1", 1, 600)
+    add("big2", 2, 600)
+
+    assert client.get("/api/settings").json()["clip_storage_mb"] == 1024
+    assert client.patch("/api/settings", json={"clip_storage_mb": 1}).status_code == 422  # API minimum is 50 MB
+    with db_session() as db:
+        from app.settings_store import update_settings
+        update_settings(db, {"clip_storage_mb": 1})  # 1 MB so the test files exceed it
+        db.commit()
+        result = run_retention(db, tmp_path)
+    # 1 MB cap: keep newest (fresh 100 KB + big1 600 KB), drop big2 (over cap) and week_old (expired)
+    assert result["clips"] == 2
+    events = {x["details"].get("ext", x["id"]): x for x in client.get("/api/events", params={"limit": 200}).json()["items"]}
+    urls = sorted(x["clip_url"] or "-" for x in events.values())
+    assert urls.count(f"/media/events/{day}/fresh.mp4") == 2 and f"/media/events/{day}/big1.mp4" in urls
+    assert not (tmp_path / day / "big2.mp4").exists() and not (tmp_path / day / "week_old.mp4").exists()
+    assert client.get("/api/events").json()["total"] == 5  # events themselves are kept
+
+
+def test_worker_config(client):
+    assert client.get("/api/internal/config", headers=WORKER).json() == {"clips": {"enabled": True}}
+    client.patch("/api/settings", json={"clips_enabled": False})
+    assert client.get("/api/internal/config", headers=WORKER).json() == {"clips": {"enabled": False}}
 
 
 def test_system_health(client):

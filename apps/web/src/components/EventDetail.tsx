@@ -1,14 +1,45 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api, type EventStatus, type VisionEvent } from "../api";
 import { eventLabel, formatDateTime } from "../format";
 import { EventStatusBadge, SeverityBadge } from "./Badges";
 import { Button, ErrorNote, inputCls } from "./ui";
 
+/** Plays the alert's short clip. It is encoded a few seconds after the alert, so retry briefly. */
+function ClipPlayer({ src, poster }: { src: string; poster: string | null }) {
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<"loading" | "ready" | "pending" | "gone">("loading");
+  useEffect(() => {
+    if (state !== "pending") return;
+    if (attempt >= 8) { setState("gone"); return; }
+    const t = window.setTimeout(() => { setAttempt((a) => a + 1); setState("loading"); }, 3000);
+    return () => window.clearTimeout(t);
+  }, [state, attempt]);
+  if (state === "gone") {
+    return <p className="grid aspect-video place-items-center rounded-lg border border-dashed border-line text-sm text-muted">
+      Clip not available (it may have been removed by the storage limit).
+    </p>;
+  }
+  return (
+    <div className="relative">
+      <video key={attempt} src={`${src}${attempt ? `?r=${attempt}` : ""}`} poster={poster ?? undefined}
+             controls autoPlay muted playsInline preload="auto"
+             onCanPlay={() => setState("ready")} onError={() => setState("pending")}
+             className="w-full rounded-lg border border-line bg-black" />
+      {state === "pending" && (
+        <p className="absolute inset-x-0 bottom-12 mx-auto w-fit rounded-md bg-black/70 px-3 py-1.5 text-xs text-white">
+          Preparing clip…
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function EventDetail({ event, onDone }: { event: VisionEvent; onDone: () => void }) {
   const qc = useQueryClient();
   const [note, setNote] = useState(event.note ?? "");
+  const [view, setView] = useState<"clip" | "snapshot">("clip");
 
   // The reviewer is recorded by the server from the signed-in account.
   const review = useMutation({
@@ -25,7 +56,9 @@ export function EventDetail({ event, onDone }: { event: VisionEvent; onDone: () 
   return (
     <div className="grid gap-5 md:grid-cols-[1fr_18rem]">
       <div>
-        {event.snapshot_url ? (
+        {event.clip_url && view === "clip" ? (
+          <ClipPlayer src={event.clip_url} poster={event.snapshot_url} />
+        ) : event.snapshot_url ? (
           <a href={event.snapshot_url} target="_blank" rel="noreferrer" title="Open full size">
             <img
               src={event.snapshot_url}
@@ -36,6 +69,16 @@ export function EventDetail({ event, onDone }: { event: VisionEvent; onDone: () 
         ) : (
           <div className="grid aspect-video place-items-center rounded-lg border border-dashed border-line text-sm text-muted">
             No snapshot for this event
+          </div>
+        )}
+        {event.clip_url && event.snapshot_url && (
+          <div className="mt-2 flex gap-1 text-xs" role="group" aria-label="Evidence">
+            {(["clip", "snapshot"] as const).map((v) => (
+              <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
+                      className={`rounded-md px-2.5 py-1 font-medium ${view === v ? "bg-accent/15 text-accent" : "text-muted hover:bg-surface-2"}`}>
+                {v === "clip" ? "Clip" : "Snapshot"}
+              </button>
+            ))}
           </div>
         )}
       </div>

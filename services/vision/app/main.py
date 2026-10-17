@@ -24,6 +24,7 @@ import httpx
 import supervision as sv
 
 from app.api_client import ApiClient
+from app.clips import ClipConfig, ClipRecorder
 from app.config import settings
 from app.detector import COCO_CLASSES, Detector
 from app.event_publisher import EventPublisher
@@ -60,10 +61,20 @@ def main() -> None:
         rules_file.changed()
     api_rules: dict[int, list[Rule]] = {}
 
+    clip_config = ClipConfig(enabled=settings.clips_enabled)
+    cameras: dict[int, dict] = {}
+
     def fetch_api_rules() -> bool:
-        """Refresh api_rules. Returns False if the API couldn't be reached."""
+        """Refresh api_rules (and clip settings). Returns False if the API couldn't be reached."""
+        nonlocal clip_config
         try:
             raw = api.rules()
+            cfg = api.config().get("clips", {})
+            new_cfg = ClipConfig(**{k: v for k, v in cfg.items() if k in ClipConfig.__dataclass_fields__})
+            if new_cfg != clip_config:
+                clip_config = new_cfg
+                for cam in cameras.values():
+                    cam["clips"].configure(clip_config)
         except httpx.HTTPError as exc:
             log.warning("Could not fetch rules from API (%s); keeping current rules", exc)
             return False
@@ -91,7 +102,6 @@ def main() -> None:
     if api:
         fetch_api_rules()
     publisher = EventPublisher(settings.event_storage_path)
-    cameras: dict[int, dict] = {}
 
     def wanted() -> dict[int, str] | None:
         """camera id -> source. None means "couldn't tell", so keep what's running."""
@@ -115,10 +125,10 @@ def main() -> None:
                 log.info("cam%d stopped", cam_id)
         for cam_id, source in desired.items():
             if cam_id not in cameras:
-                cameras[cam_id] = start_camera(cam_id, source, rules_for(cam_id))
+                cameras[cam_id] = start_camera(cam_id, source, rules_for(cam_id), clip_config)
 
     def emit(cam: dict, hit: RuleHit, image) -> None:
-        event = publisher.publish(cam["key"], hit, image, cam["engine"].rules)
+        event = publisher.publish(cam["key"], hit, image, cam["engine"].rules, clips=cam["clips"])
         if api:
             api.send_event({**event, "camera_id": cam["id"]})
 
@@ -148,6 +158,7 @@ def main() -> None:
 
             for cam in cameras.values():
                 check_health(cam, emit)
+                cam["clips"].tick(time.time())
                 if now < cam["next_due"]:
                     continue
                 frame = cam["reader"].latest(timeout=0)
@@ -221,14 +232,18 @@ def main() -> None:
             cv2.destroyAllWindows()
 
 
-def start_camera(cam_id: int, source: str, rules: list[Rule]) -> dict:
+def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipConfig) -> dict:
     key = f"cam{cam_id}"
     log.info("%s starting (%d rules)", key, len(rules))  # never log the source: it may contain a password
+    clips = ClipRecorder(clip_config)
+    reader = FrameReader(key, source)
+    reader.on_frame = clips.add_frame  # pre-roll for evidence clips
     return {
         "id": cam_id,
         "key": key,
         "source": source,
-        "reader": FrameReader(key, source).start(),
+        "clips": clips,
+        "reader": reader.start(),
         # frame_rate = our sampling rate, so lost_track_buffer is measured in sampled frames
         "tracker": sv.ByteTrack(frame_rate=max(1, round(settings.inference_fps))),
         "engine": RuleEngine(rules),
@@ -244,6 +259,7 @@ def start_camera(cam_id: int, source: str, rules: list[Rule]) -> dict:
 
 def stop_camera(cam: dict, show: bool) -> None:
     cam["reader"].stop()
+    cam["clips"].flush()
     if show:
         try:
             cv2.destroyWindow(cam["key"])

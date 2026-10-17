@@ -47,6 +47,12 @@ def worker_rules(db: Session = Depends(get_db)):
     return grouped
 
 
+@router.get("/config")
+def worker_config(db: Session = Depends(get_db)):
+    """Settings the worker applies at runtime (polled with the rules)."""
+    return {"clips": {"enabled": get_settings(db)["clips_enabled"]}}
+
+
 @router.post("/counts", status_code=status.HTTP_204_NO_CONTENT)
 def ingest_counts(samples: list[CountSampleIn], db: Session = Depends(get_db)):
     known = set(db.scalars(select(Camera.id)))
@@ -93,6 +99,7 @@ def ingest_event(body: EventIn, db: Session = Depends(get_db)):
         confidence=obj.confidence if obj else None,
         details={**body.details, **({"box": obj.box} if obj and obj.box else {})},
         snapshot_path=(body.evidence or {}).get("snapshot_path"),
+        clip_path=(body.evidence or {}).get("clip_path"),
     )
     db.add(event)
     db.commit()

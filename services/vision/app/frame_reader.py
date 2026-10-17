@@ -34,6 +34,9 @@ class FrameReader:
         self.reconnects = 0
         self.frames_decoded = 0
 
+        # Optional callback for every decoded frame (image, unix time), e.g. the clip pre-roll.
+        # Called on the reader thread; it must be fast and thread-safe.
+        self.on_frame = None
         self._latest: Frame | None = None
         self._lock = threading.Lock()
         self._new_frame = threading.Event()
@@ -116,3 +119,8 @@ class FrameReader:
             self._latest = Frame(image=image, captured_at=now, index=self.frames_decoded)
             self.last_frame_at = now
         self._new_frame.set()
+        if self.on_frame is not None:
+            try:
+                self.on_frame(image, now)
+            except Exception:  # noqa: BLE001 - never let a consumer break ingest
+                log.exception("[%s] frame callback failed", self.camera_id)
