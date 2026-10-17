@@ -51,6 +51,20 @@ Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard 
 - Clips have their own retention (default 7 days) and a total storage cap (default 1 GB, oldest deleted first).
 - Settings → Data retention can turn clips off.
 
+**Search (plain English):** the **Search** page finds anything the cameras saw, not just alerts. Type something like *"person in a white hoodie"* or *"white car"*.
+- **What's saved:** every tracked person or vehicle becomes a *sighting*: a small cut-out, a camera view with the path they walked, first and last seen times, and a SigLIP "meaning fingerprint". That's about 25 KB per sighting, with no video.
+- **Results** are ranked by relevance (strong / possible / weak). Opening one shows the path and any alert clip from that time.
+- **Find similar** lists other sightings that *look* alike, on any camera, in time order. It's a lead based on appearance, not an identification.
+- **Retention:** sightings are kept 14 days (Settings).
+- **Setup:** search needs the model once:
+
+  ```powershell
+  cd services\vision
+  uv run --group export python ..\..\scripts\export_siglip.py
+  ```
+
+  It writes `models\siglip`, about 470 MB: Google's SigLIP, Apache-2.0.
+
 **Roles:** *admins* manage cameras, rules, users and settings. *Operators* watch and review events. New alerts pop up live, and everything updates without reloading.
 
 **Drawing tips:** people are located by their feet (the bottom of their box), so draw zones on the floor. If a person is cut off by the bottom of the image, the middle of the box is used instead.

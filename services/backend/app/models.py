@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, LargeBinary, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -83,6 +83,29 @@ class DetectionRule(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class Sighting(Base):
+    """One tracked person/vehicle on one camera: when, where it walked, a cut-out, and a SigLIP
+    embedding (the "meaning fingerprint" used for plain-English search). ~25 KB, no video."""
+
+    __tablename__ = "sightings"
+    __table_args__ = (Index("ix_sightings_camera_time", "camera_id", "first_seen"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"))
+    track_id: Mapped[int]
+    object_class: Mapped[str] = mapped_column(String(60), index=True)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    confidence: Mapped[float] = mapped_column(Float)
+    path: Mapped[list] = mapped_column(JSON, default=list)
+    embedding: Mapped[bytes] = mapped_column(LargeBinary)  # float16, L2-normalised
+    thumbnail_path: Mapped[str] = mapped_column(Text)
+    context_path: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    camera: Mapped[Camera] = relationship()
 
 
 class CountSample(Base):

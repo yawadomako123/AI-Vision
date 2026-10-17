@@ -21,13 +21,25 @@ def wait_for_file(path, timeout=20.0):
 
 def test_encode_clip_is_small_and_playable(tmp_path):
     out = tmp_path / "c.mp4"
-    encode_clip([frame(i, 640, 480) for i in range(48)], out, fps=6, crf=32)
+    encode_clip([(i / 6, frame(i, 640, 480)) for i in range(48)], out, fps=6, crf=32)
     assert out.exists() and not (tmp_path / "c.part.mp4").exists()
     with av.open(str(out)) as c:
         v = c.streams.video[0]
         assert (v.codec_context.name, v.width, v.height) == ("h264", 640, 480)
         assert sum(1 for _ in c.decode(v)) == 48
     assert out.stat().st_size < 300_000
+
+
+def clip_seconds(path) -> float:
+    with av.open(str(path)) as c:
+        return c.duration / 1_000_000
+
+
+def test_playback_uses_real_time_even_with_few_frames(tmp_path):
+    """A busy machine may deliver 3 fps instead of 6: the clip must still last the real 8 s."""
+    out = tmp_path / "sparse.mp4"
+    encode_clip([(i / 3, frame(i, 640, 480)) for i in range(25)], out, fps=6, crf=32)  # 8 s at 3 fps
+    assert 7.5 <= clip_seconds(out) <= 8.6
 
 
 def test_recorder_keeps_preroll_and_post(tmp_path):

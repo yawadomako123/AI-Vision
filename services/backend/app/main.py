@@ -25,7 +25,7 @@ from app.db import SessionLocal, get_db
 from app.live import hub
 from app.models import User
 from app.retention import run_retention
-from app.routes import analytics, auth, cameras, events, internal, rules, users
+from app.routes import analytics, auth, cameras, events, internal, rules, sightings, users
 
 log = logging.getLogger(__name__)
 RETENTION_INTERVAL_SECONDS = 3600
@@ -62,7 +62,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for module in (auth, users, cameras, rules, events, analytics, internal):
+for module in (auth, users, cameras, rules, events, analytics, sightings, internal):
     app.include_router(module.router)
 
 settings.event_storage_path.mkdir(parents=True, exist_ok=True)

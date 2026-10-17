@@ -118,6 +118,25 @@ export interface Schedule {
   end: string;
 }
 
+export interface Sighting {
+  id: number;
+  camera_id: number;
+  camera_name: string | null;
+  object_class: string;
+  first_seen: string;
+  last_seen: string;
+  duration_seconds: number;
+  confidence: number;
+  thumbnail_url: string;
+  context_url: string;
+  score: number | null;
+}
+
+export interface SightingDetail extends Sighting {
+  path: [number, number][];
+  clips: { event_id: number; event_type: string; occurred_at: string; clip_url: string | null; snapshot_url: string | null }[];
+}
+
 export interface Arming {
   armed: boolean;
   changed_by: string | null;
@@ -269,6 +288,11 @@ export const api = {
   deleteRule: (id: number) => request<void>(`/api/rules/${id}`, { method: "DELETE" }),
   frameUrl: (cameraId: number) => `/api/cameras/${cameraId}/frame?t=${Date.now()}`,
 
+  search: (p: { q?: string; camera_id?: string; object_class?: string; hours?: number }) =>
+    request<Sighting[]>(`/api/search${query({ ...p })}`),
+  searchStatus: () => request<{ available: boolean }>("/api/search/status"),
+  sighting: (id: number) => request<SightingDetail>(`/api/sightings/${id}`),
+  similar: (id: number, hours: number) => request<Sighting[]>(`/api/sightings/${id}/similar${query({ hours })}`),
   arming: () => request<Arming>("/api/arming"),
   setArming: (armed: boolean) => request<Arming>("/api/arming", { method: "PUT", body: JSON.stringify({ armed }) }),
   settings: () => request<AppSettings>("/api/settings"),

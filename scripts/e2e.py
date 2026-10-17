@@ -233,8 +233,7 @@ def main() -> int:
                     import av
                     with av.open(io.BytesIO(clip.content)) as c:
                         v = c.streams.video[0]
-                        frames = sum(1 for _ in c.decode(v))
-                        seconds = frames / float(v.average_rate or 6)
+                        seconds = c.duration / 1_000_000  # real playback length
                     kb = len(clip.content) / 1024
                     ok = clip.headers["content-type"] == "video/mp4" and kb < 1024 and seconds >= 5
                     detail = f"{seconds:.0f} s, {v.width}x{v.height}, {kb:.0f} KB"
@@ -303,6 +302,34 @@ def main() -> int:
             for e in admin.get("/api/events", params={"camera_id": cam_id, "event_type": "camera_offline"}).json()["items"]
         ), 90)
         check("Stream loss raises camera_offline", bool(offline))
+
+        # Sightings + plain-English search (only if the search model is installed).
+        if admin.get("/api/search/status").json()["available"]:
+            def sightings():
+                found = admin.get("/api/search", params={"camera_id": cam_id, "hours": 1}).json()
+                return [s for s in found if s["object_class"] == "person"] or None
+            seen = wait_for(sightings, 60, interval=3)
+            check("The person is recorded as a searchable sighting", bool(seen),
+                  f"{len(seen)} sighting(s)" if seen else "none")
+            if seen:
+                hits = admin.get("/api/search", params={"q": "person in a white hoodie", "camera_id": cam_id,
+                                                         "hours": 1}).json()
+                top = hits[0] if hits else None
+                check("Plain-English search finds them (\"person in a white hoodie\")",
+                      bool(top) and top["score"] >= 0.66,
+                      f"top relevance {top['score']:.2f}" if top else "no results")
+                wrong = admin.get("/api/search", params={"q": "red car", "camera_id": cam_id, "hours": 1}).json()
+                check("A wrong description finds nothing (\"red car\")", wrong == [], f"{len(wrong)} result(s)")
+                timeline = admin.get(f"/api/sightings/{seen[0]['id']}/similar", params={"hours": 1}).json()
+                check("Find similar returns a time-ordered timeline",
+                      any(t["id"] == seen[0]["id"] for t in timeline)
+                      and [t["first_seen"] for t in timeline] == sorted(t["first_seen"] for t in timeline),
+                      f"{len(timeline)} sighting(s)")
+                detail = admin.get(f"/api/sightings/{seen[0]['id']}").json()
+                check("Sighting links the alert clip from while they were in view",
+                      any(c["clip_url"] for c in detail["clips"]), f"{len(detail['clips'])} alert(s)")
+        else:
+            print("  (search model not installed: skipping search checks)")
 
         actions = {a["action"] for a in admin.get("/api/audit", params={"limit": 200}).json()["items"]}
         check("Audit log recorded the changes",

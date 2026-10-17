@@ -32,6 +32,7 @@ from app.frame_reader import FrameReader
 from app.overlay import draw_rules
 from app.counts import MinuteCounter
 from app.rule_engine import Rule, RuleEngine, RuleHit, RulesFile, object_positions
+from app.sightings import SightingCollector, SiglipEmbedder
 
 log = logging.getLogger("vision")
 STATUS_REPORT_SECONDS = 5.0
@@ -103,6 +104,13 @@ def main() -> None:
         fetch_api_rules()
     publisher = EventPublisher(settings.event_storage_path)
 
+    embedder = None
+    if api and (settings.search_model_dir / "vision.onnx").exists():
+        embedder = SiglipEmbedder(settings.search_model_dir, settings.search_device)
+        log.info("Sightings search on (%s)", embedder.provider)
+    elif api:
+        log.info("Sightings search off: run scripts/export_siglip.py to enable it")
+
     def wanted() -> dict[int, str] | None:
         """camera id -> source. None means "couldn't tell", so keep what's running."""
         if args.source:
@@ -126,6 +134,8 @@ def main() -> None:
         for cam_id, source in desired.items():
             if cam_id not in cameras:
                 cameras[cam_id] = start_camera(cam_id, source, rules_for(cam_id), clip_config)
+                cameras[cam_id]["sightings"] = SightingCollector(cam_id, api.send_sighting if api else None,
+                                                                 embedder if api else None)
 
     def emit(cam: dict, hit: RuleHit, image) -> None:
         event = publisher.publish(cam["key"], hit, image, cam["engine"].rules, clips=cam["clips"])
@@ -159,6 +169,8 @@ def main() -> None:
             for cam in cameras.values():
                 check_health(cam, emit)
                 cam["clips"].tick(time.time())
+                if "sightings" in cam:
+                    cam["sightings"].tick(time.time())
                 if now < cam["next_due"]:
                     continue
                 frame = cam["reader"].latest(timeout=0)
@@ -178,6 +190,8 @@ def main() -> None:
 
                 # Derived from class_id: the tracker drops `data` when nothing is detected.
                 names = [COCO_CLASSES.get(int(c), str(c)) for c in detections.class_id]
+                cam["sightings"].update(detections, names, object_positions(detections, h).xyxy[:, :2],
+                                        frame.image, frame.captured_at)
                 samples = cam["counter"].add(names, frame.captured_at)
                 if api and samples:
                     api.send_counts(samples)
@@ -260,6 +274,8 @@ def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipC
 def stop_camera(cam: dict, show: bool) -> None:
     cam["reader"].stop()
     cam["clips"].flush()
+    if "sightings" in cam:
+        cam["sightings"].flush()
     if show:
         try:
             cv2.destroyWindow(cam["key"])

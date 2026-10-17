@@ -8,7 +8,7 @@ from pathlib import Path
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from app.models import CountSample, Event, UserSession
+from app.models import CountSample, Event, Sighting, UserSession
 from app.settings_store import get_settings
 
 log = logging.getLogger(__name__)
@@ -81,6 +81,15 @@ def run_retention(db: Session, storage: Path, now: datetime | None = None) -> di
     if expired:
         db.execute(update(Event).where(Event.clip_path.in_(expired)).values(clip_path=None))
 
+    # Sightings (search): delete their two small images, then the rows.
+    sighting_cutoff = now - timedelta(days=cfg["sighting_retention_days"])
+    old_sightings = db.execute(select(Sighting.thumbnail_path, Sighting.context_path)
+                               .where(Sighting.first_seen < sighting_cutoff)).all()
+    for thumb, ctx in old_sightings:
+        unlink(thumb)
+        unlink(ctx)
+    sightings = db.execute(delete(Sighting).where(Sighting.first_seen < sighting_cutoff)).rowcount
+
     events = db.execute(delete(Event).where(Event.occurred_at < event_cutoff)).rowcount
     counts = db.execute(delete(CountSample).where(CountSample.bucket_start < count_cutoff)).rowcount
     sessions = db.execute(delete(UserSession).where(UserSession.expires_at < now)).rowcount
@@ -88,7 +97,7 @@ def run_retention(db: Session, storage: Path, now: datetime | None = None) -> di
     day_dirs = _remove_old_day_dirs(root, event_cutoff)
 
     result = {"events": events, "count_samples": counts, "sessions": sessions, "snapshot_days": day_dirs,
-              "clips": clips_removed}
+              "clips": clips_removed, "sightings": sightings}
     if any(result.values()):
         log.info("retention removed %s", result)
     return result

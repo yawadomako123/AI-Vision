@@ -127,7 +127,7 @@ def test_counts_and_timeseries(client, camera):
 def test_settings(client):
     assert client.get("/api/settings").json() == {
         "event_retention_days": 30, "count_retention_days": 90,
-        "clips_enabled": True, "clip_retention_days": 7, "clip_storage_mb": 1024}
+        "clips_enabled": True, "clip_retention_days": 7, "clip_storage_mb": 1024, "sighting_retention_days": 14}
     assert client.patch("/api/settings", json={"event_retention_days": 7}).json()["event_retention_days"] == 7
     assert client.patch("/api/settings", json={"event_retention_days": 0}).status_code == 422
 

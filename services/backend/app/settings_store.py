@@ -11,6 +11,7 @@ DEFAULTS = {
         "clips_enabled": True,
         "clip_retention_days": 7,
         "clip_storage_mb": 1024,
+        "sighting_retention_days": 14,
     },
     "system": {
         "armed": True,

@@ -14,6 +14,7 @@ import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path
 
 import av
@@ -43,21 +44,31 @@ def _small(frame: np.ndarray, max_width: int) -> np.ndarray:
     return frame[: h - h % 2, : w - w % 2]  # H.264 needs even dimensions
 
 
-def encode_clip(frames: list[np.ndarray], path: Path, fps: float, crf: int) -> None:
-    """Write frames to an MP4 atomically (tmp file + rename), so it's never served half-written."""
+def encode_clip(frames: list[tuple[float, np.ndarray]], path: Path, fps: float, crf: int) -> None:
+    """Write (timestamp, frame) pairs to an MP4 atomically (tmp file + rename, so it's never served
+    half-written). Frames keep their real capture times, so playback runs at real speed even if
+    the camera or a busy machine delivered fewer frames than `fps`."""
     if not frames:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".part.mp4")
-    h, w = frames[0].shape[:2]
+    h, w = frames[0][1].shape[:2]
+    t0 = frames[0][0]
+    ms = Fraction(1, 1000)
     with av.open(str(tmp), "w", format="mp4", options={"movflags": "+faststart"}) as out:
         stream = out.add_stream("libx264", rate=round(fps))
         stream.width, stream.height, stream.pix_fmt = w, h, "yuv420p"
+        stream.codec_context.time_base = ms
         stream.options = {"crf": str(crf), "preset": "veryfast", "tune": "zerolatency"}
-        for f in frames:
+        last_pts = -1
+        for ts, f in frames:
             if f.shape[:2] != (h, w):
                 f = cv2.resize(f, (w, h))
-            for packet in stream.encode(av.VideoFrame.from_ndarray(f, format="bgr24")):
+            vf = av.VideoFrame.from_ndarray(f, format="bgr24")
+            vf.pts = max(last_pts + 1, int(round((ts - t0) * 1000)))  # strictly increasing, in ms
+            vf.time_base = ms
+            last_pts = vf.pts
+            for packet in stream.encode(vf):
                 out.mux(packet)
         for packet in stream.encode():
             out.mux(packet)
@@ -93,7 +104,7 @@ class ClipRecorder:
             while self._buffer and ts - self._buffer[0][0] > cfg.pre_seconds:
                 self._buffer.popleft()
             if self._active is not None:
-                self._active["frames"].append(small)
+                self._active["frames"].append((ts, small))
                 if ts >= self._active["until"]:
                     finished, self._active = self._active, None
         if finished:
@@ -113,7 +124,7 @@ class ClipRecorder:
                 return self._active["path"]
             self._active = {
                 "path": path, "started": ts, "until": ts + cfg.post_seconds,
-                "frames": [f for _, f in self._buffer],
+                "frames": list(self._buffer),
             }
             return path
 
@@ -134,7 +145,8 @@ class ClipRecorder:
     def _encode(self, clip: dict) -> None:
         try:
             encode_clip(clip["frames"], clip["path"], self.config.fps, self.config.crf)
-            log.info("clip saved %s (%d frames, %.0f KB)", clip["path"].name, len(clip["frames"]),
-                     clip["path"].stat().st_size / 1024)
+            frames = clip["frames"]
+            log.info("clip saved %s (%d frames over %.1f s, %.0f KB)", clip["path"].name, len(frames),
+                     frames[-1][0] - frames[0][0] if frames else 0, clip["path"].stat().st_size / 1024)
         except Exception:  # noqa: BLE001 - a failed clip must never take down detection
             log.exception("could not encode clip %s", clip["path"])

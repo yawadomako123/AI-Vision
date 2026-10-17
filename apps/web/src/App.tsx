@@ -11,6 +11,7 @@ import Cameras from "./pages/Cameras";
 import Events from "./pages/Events";
 import Overview from "./pages/Overview";
 import RulesEditor from "./pages/RulesEditor";
+import Search from "./pages/Search";
 import Settings from "./pages/Settings";
 
 function LiveIndicator() {
@@ -42,6 +43,7 @@ function Nav() {
           </span>
         )}
       </NavLink>
+      <NavLink to="/search" className={link}>Search</NavLink>
       <NavLink to="/cameras" className={link}>Cameras</NavLink>
       <NavLink to="/analytics" className={link}>Analytics</NavLink>
       <NavLink to="/settings" className={link}>Settings</NavLink>
@@ -123,6 +125,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Overview />} />
           <Route path="/events" element={<Events />} />
+          <Route path="/search" element={<Search />} />
           <Route path="/cameras" element={<Cameras />} />
           <Route path="/cameras/:id/rules" element={<RulesEditor />} />
           <Route path="/analytics" element={<Analytics />} />

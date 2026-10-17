@@ -17,7 +17,7 @@ dependencies = [
 [dependency-groups]
 dev = ["pytest"]
 # Only needed once, to download RF-DETR (Apache-2.0) and export it to ONNX.
-export = ["rfdetr", "onnx", "onnxscript", "onnxsim"]
+export = ["rfdetr", "onnx", "onnxscript", "onnxsim", "sentencepiece"]
 
 [tool.uv]
 default-groups = ["dev"]

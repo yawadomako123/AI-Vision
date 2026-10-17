@@ -48,6 +48,9 @@ class ApiClient:
     def send_event(self, event: dict) -> None:
         self._enqueue("/api/internal/events", event, event["id"])
 
+    def send_sighting(self, sighting: dict) -> None:
+        self._enqueue("/api/internal/sightings", sighting, f"sighting cam{sighting['camera_id']}#{sighting['track_id']}")
+
     def send_counts(self, samples: list[dict]) -> None:
         if samples:
             self._enqueue("/api/internal/counts", samples, f"counts@{samples[0]['bucket_start']}")

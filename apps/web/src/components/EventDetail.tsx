@@ -7,7 +7,7 @@ import { EventStatusBadge, SeverityBadge } from "./Badges";
 import { Button, ErrorNote, inputCls } from "./ui";
 
 /** Plays the alert's short clip. It is encoded a few seconds after the alert, so retry briefly. */
-function ClipPlayer({ src, poster }: { src: string; poster: string | null }) {
+export function ClipPlayer({ src, poster }: { src: string; poster: string | null }) {
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<"loading" | "ready" | "pending" | "gone">("loading");
   useEffect(() => {

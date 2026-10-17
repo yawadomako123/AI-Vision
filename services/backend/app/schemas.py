@@ -218,6 +218,7 @@ class SettingsOut(BaseModel):
     clips_enabled: bool
     clip_retention_days: int
     clip_storage_mb: int
+    sighting_retention_days: int
 
 
 class SettingsUpdate(BaseModel):
@@ -226,6 +227,7 @@ class SettingsUpdate(BaseModel):
     clips_enabled: bool | None = None
     clip_retention_days: int | None = Field(default=None, ge=1, le=365)
     clip_storage_mb: int | None = Field(default=None, ge=50, le=1_000_000)
+    sighting_retention_days: int | None = Field(default=None, ge=1, le=365)
 
 
 HTTP_URL = r"^https?://[^\s/$.?#][^\s]*$"
@@ -262,6 +264,38 @@ class ArmingOut(BaseModel):
 
 class ArmingIn(BaseModel):
     armed: bool
+
+
+class SightingIn(BaseModel):
+    camera_id: int
+    track_id: int
+    object_class: str = Field(max_length=60)
+    first_seen: datetime
+    last_seen: datetime
+    confidence: float = Field(ge=0, le=1)
+    path: list[tuple[float, float]] = Field(default=[], max_length=200)
+    embedding: str = Field(max_length=20_000)  # base64 float16
+    thumbnail: str = Field(max_length=2_000_000)  # base64 JPEG
+    context: str = Field(max_length=2_000_000)
+
+
+class SightingOut(BaseModel):
+    id: int
+    camera_id: int
+    camera_name: str | None
+    object_class: str
+    first_seen: datetime
+    last_seen: datetime
+    duration_seconds: float
+    confidence: float
+    thumbnail_url: str
+    context_url: str
+    score: float | None = None  # 0..1 relevance for search / similarity results
+
+
+class SightingDetail(SightingOut):
+    path: list[tuple[float, float]]
+    clips: list[dict]  # alerts on that camera while it was in view: {event_id, event_type, clip_url, snapshot_url}
 
 
 class NotificationTestResult(BaseModel):
