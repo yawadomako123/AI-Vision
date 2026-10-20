@@ -14,7 +14,7 @@ from app.crypto import decrypt
 from app.db import get_db
 from app.live import hub, live_previews, worker_contact
 from app.notifier import notifier
-from app.settings_store import get_settings
+from app.settings_store import SENSITIVITY_CONFIDENCE, get_settings
 from app.models import Camera, CountSample, DetectionRule, Event, LineCount
 from app.schemas import (
     CameraStatusIn, CountSampleIn, EventIn, EventOut, InternalCamera, LineCountIn, LiveFrameIn, RuleOut,
@@ -62,7 +62,8 @@ def worker_config(db: Session = Depends(get_db)):
     """Settings the worker applies at runtime (polled with the rules)."""
     cfg = get_settings(db)
     return {"clips": {"enabled": cfg["clips_enabled"]}, "search_enabled": cfg["search_enabled"],
-            "analysis_fps": cfg["analysis_fps"], "live_cameras": sorted(hub.watched())}
+            "analysis_fps": cfg["analysis_fps"], "live_cameras": sorted(hub.watched()),
+            "detection_confidence": SENSITIVITY_CONFIDENCE.get(cfg["detection_sensitivity"], 0.5)}
 
 
 @router.post("/live", status_code=status.HTTP_204_NO_CONTENT)

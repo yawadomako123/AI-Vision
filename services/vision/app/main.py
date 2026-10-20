@@ -80,9 +80,13 @@ def main() -> None:
         if fps != runtime["fps"]:
             runtime["fps"] = fps
             for cam in cameras.values():  # tracker timing depends on the analysis rate
-                cam["tracker"] = sv.ByteTrack(frame_rate=max(1, round(fps)))
+                cam["tracker"] = new_tracker(fps)
             log.info("Analysis speed: %.1f frames/s per camera", fps)
         runtime["live"] = {int(c) for c in cfg.get("live_cameras", [])}
+        conf = cfg.get("detection_confidence")
+        if conf and abs(float(conf) - detector.confidence) > 1e-6:
+            detector.confidence = float(conf)
+            log.info("Detection sensitivity: minimum confidence %.2f", detector.confidence)
         want_search = bool(cfg.get("search_enabled"))
         if want_search and embedder is None:
             if (settings.search_model_dir / "vision.onnx").exists():
@@ -283,6 +287,13 @@ def main() -> None:
             cv2.destroyAllWindows()
 
 
+def new_tracker(fps: float) -> sv.ByteTrack:
+    """frame_rate = our sampling rate, so lost_track_buffer is measured in sampled frames.
+    A person only counts (and can trigger rules) once seen in 2 analysed frames in a row: that
+    filters one-frame ghost boxes, which made 2 people show as 3 or 4, for ~0.3 s of delay."""
+    return sv.ByteTrack(frame_rate=max(1, round(fps)), minimum_consecutive_frames=2)
+
+
 def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipConfig, fps: float) -> dict:
     key = f"cam{cam_id}"
     log.info("%s starting (%d rules)", key, len(rules))  # never log the source: it may contain a password
@@ -295,8 +306,7 @@ def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipC
         "source": source,
         "clips": clips,
         "reader": reader.start(),
-        # frame_rate = our sampling rate, so lost_track_buffer is measured in sampled frames
-        "tracker": sv.ByteTrack(frame_rate=max(1, round(fps))),
+        "tracker": new_tracker(fps),
         "engine": RuleEngine(rules),
         "counter": MinuteCounter(cam_id),
         "lines": LineCounter(cam_id),

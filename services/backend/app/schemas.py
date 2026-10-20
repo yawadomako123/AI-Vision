@@ -262,6 +262,7 @@ class SettingsOut(BaseModel):
     sighting_retention_days: int
     search_enabled: bool
     analysis_fps: float
+    detection_sensitivity: Literal["high", "balanced", "low"]
 
 
 class SettingsUpdate(BaseModel):
@@ -273,6 +274,7 @@ class SettingsUpdate(BaseModel):
     sighting_retention_days: int | None = Field(default=None, ge=1, le=365)
     search_enabled: bool | None = None
     analysis_fps: float | None = Field(default=None, ge=1, le=5)
+    detection_sensitivity: Literal["high", "balanced", "low"] | None = None
 
 
 HTTP_URL = r"^https?://[^\s/$.?#][^\s]*$"

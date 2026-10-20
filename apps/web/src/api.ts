@@ -220,6 +220,7 @@ export interface AppSettings {
   sighting_retention_days: number;
   search_enabled: boolean;
   analysis_fps: number;
+  detection_sensitivity: "high" | "balanced" | "low";
 }
 
 export interface NotificationSettings {

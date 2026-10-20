@@ -128,7 +128,7 @@ def test_settings(client):
     assert client.get("/api/settings").json() == {
         "event_retention_days": 30, "count_retention_days": 90,
         "clips_enabled": True, "clip_retention_days": 7, "clip_storage_mb": 1024, "sighting_retention_days": 14,
-        "search_enabled": False, "analysis_fps": 3}
+        "search_enabled": False, "analysis_fps": 3, "detection_sensitivity": "balanced"}
     assert client.patch("/api/settings", json={"event_retention_days": 7}).json()["event_retention_days"] == 7
     assert client.patch("/api/settings", json={"event_retention_days": 0}).status_code == 422
 
@@ -197,7 +197,7 @@ def test_clip_ingest_retention_and_cap(client, camera, db_session, tmp_path):
 
 def test_worker_config(client):
     assert client.get("/api/internal/config", headers=WORKER).json() == {
-        "clips": {"enabled": True}, "search_enabled": False, "analysis_fps": 3, "live_cameras": []}
+        "clips": {"enabled": True}, "search_enabled": False, "analysis_fps": 3, "live_cameras": [], "detection_confidence": 0.5}
     client.patch("/api/settings", json={"clips_enabled": False, "analysis_fps": 2})
     cfg = client.get("/api/internal/config", headers=WORKER).json()
     assert cfg["clips"] == {"enabled": False} and cfg["analysis_fps"] == 2
@@ -285,3 +285,12 @@ def test_entries_analytics_and_csv(client, camera, db_session):
     client.post("/api/internal/line-counts", headers=WORKER, json=[line_sample(cam, None, 60 * 24 * 200, 1, 1)])
     with db_session() as db:
         assert run_retention(db, __import__("pathlib").Path("does-not-exist-storage"))["count_samples"] == 1
+
+
+def test_detection_sensitivity_reaches_worker(client, operator):
+    conf = lambda: client.get("/api/internal/config", headers=WORKER).json()["detection_confidence"]
+    assert conf() == 0.5
+    assert client.patch("/api/settings", json={"detection_sensitivity": "high"}).json()["detection_sensitivity"] == "high"
+    assert conf() == 0.4
+    assert client.patch("/api/settings", json={"detection_sensitivity": "extreme"}).status_code == 422
+    assert operator.patch("/api/settings", json={"detection_sensitivity": "low"}).status_code == 403

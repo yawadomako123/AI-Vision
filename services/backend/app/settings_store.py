@@ -16,6 +16,8 @@ DEFAULTS = {
         "search_enabled": False,
         # Frames analysed per second per camera: lower = lighter on weak hardware.
         "analysis_fps": 3,
+        # How sure the model must be before something counts: high = catches more, also more false boxes.
+        "detection_sensitivity": "balanced",
     },
     "system": {
         "armed": True,
@@ -36,6 +38,10 @@ DEFAULTS = {
         "summary_last_sent": None,  # local date, so a restart never sends it twice
     },
 }
+
+
+# Minimum model confidence per sensitivity level (tuned on real indoor phone-camera footage).
+SENSITIVITY_CONFIDENCE = {"high": 0.40, "balanced": 0.50, "low": 0.60}
 
 
 def get_settings(db: Session, group: str = "general") -> dict:

@@ -119,6 +119,15 @@ function Performance() {
             <option value="5">5: most responsive, heaviest</option>
           </select>
         </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-muted">Detection sensitivity</span>
+          <select className={selectCls} value={s.detection_sensitivity}
+                  onChange={(e) => save.mutate({ detection_sensitivity: e.target.value as AppSettings["detection_sensitivity"] })}>
+            <option value="high">High: catches more, but more false or doubled boxes</option>
+            <option value="balanced">Balanced (recommended)</option>
+            <option value="low">Low: only very clear people and vehicles</option>
+          </select>
+        </label>
         <label className="flex items-start gap-2">
           <input type="checkbox" className="mt-0.5" checked={s.search_enabled} onChange={(e) => save.mutate({ search_enabled: e.target.checked })} />
           <span>

@@ -54,6 +54,8 @@ Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard 
 - Clips have their own retention (default 7 days) and a total storage cap (default 1 GB, oldest deleted first).
 - Settings → Data retention can turn clips off.
 
+**Counting accuracy:** extra boxes on the same person (for example one for the whole body and one for the head) are removed automatically. **Settings → Performance → Detection sensitivity** sets how sure the model must be: *High* catches more in poor light but adds false or doubled boxes, *Balanced* is the default, and *Low* only counts very clear people and vehicles. It applies live.
+
 **Performance:** Settings → Performance sets the *analysis speed* (frames checked per second per camera: 1, 2, 3 or 5). Use 1–2 on a weak PC or with many cameras; 3 is the default. It applies live.
 
 **Search (plain English):** the **Search** page finds anything the cameras saw, not just alerts. Type something like *"person in a white hoodie"* or *"white car"*.

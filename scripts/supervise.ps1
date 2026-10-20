@@ -25,6 +25,7 @@ param(
 
 # A supervisor must survive anything: log errors and carry on.
 $ErrorActionPreference = "Continue"
+$ProgressPreference = "SilentlyContinue"  # no "Reading web response" bars from the health checks
 $Root = (Resolve-Path "$PSScriptRoot\..").Path
 $Logs = Join-Path $Root "storage\logs"
 New-Item -ItemType Directory -Force $Logs | Out-Null
@@ -39,7 +40,9 @@ function Log([string]$msg) {
 
 # --- single instance -----------------------------------------------------------------------
 $mutex = New-Object System.Threading.Mutex($false, "Global\AIVisionEdgeSupervisor")
-if (-not $mutex.WaitOne(0)) {
+try { $owned = $mutex.WaitOne(0) }
+catch [System.Threading.AbandonedMutexException] { $owned = $true }  # last run's window was closed: we own it now
+if (-not $owned) {
     Write-Host "The supervisor is already running."
     exit 0
 }

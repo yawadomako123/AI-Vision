@@ -33,6 +33,39 @@ COCO_CLASSES = {
     89: "hair drier", 90: "toothbrush",
 }
 
+def remove_duplicates(d: sv.Detections, iou_max: float = 0.5, contain: float = 0.8,
+                      area_ratio: float = 0.3) -> sv.Detections:
+    """Drop extra boxes on the same object (DETR models have no NMS step).
+
+    Typical case: one box for the whole person and another for just the head/upper body,
+    both labelled "person", which made one person count as two or three. Per class, a box is
+    a duplicate of a more confident one when they overlap heavily (IoU) or when it sits almost
+    entirely inside it and isn't much smaller. A much smaller box inside a big one is kept:
+    that's usually a second person further away.
+    """
+    if len(d) < 2:
+        return d
+    xyxy = d.xyxy
+    area = (xyxy[:, 2] - xyxy[:, 0]) * (xyxy[:, 3] - xyxy[:, 1])
+    keep: list[int] = []
+    for i in np.argsort(-d.confidence):
+        a = xyxy[i]
+        dup = False
+        for j in keep:
+            if d.class_id[j] != d.class_id[i]:
+                continue
+            b = xyxy[j]
+            inter = max(0.0, min(a[2], b[2]) - max(a[0], b[0])) * max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+            small, big = min(area[i], area[j]), max(area[i], area[j])
+            iou = inter / (area[i] + area[j] - inter + 1e-9)
+            if iou >= iou_max or (inter / (small + 1e-9) >= contain and small / (big + 1e-9) >= area_ratio):
+                dup = True
+                break
+        if not dup:
+            keep.append(int(i))
+    return d[np.array(sorted(keep), dtype=int)]
+
+
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 _STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
@@ -115,9 +148,9 @@ class Detector:
 
         cx, cy, bw, bh = boxes.T
         xyxy = np.stack([(cx - bw / 2) * w, (cy - bh / 2) * h, (cx + bw / 2) * w, (cy + bh / 2) * h], axis=1)
-        return sv.Detections(
+        return remove_duplicates(sv.Detections(
             xyxy=xyxy.astype(np.float32),
             confidence=conf.astype(np.float32),
             class_id=class_ids.astype(int),
             data={"class_name": np.array([COCO_CLASSES.get(int(c), str(c)) for c in class_ids])},
-        )
+        ))
