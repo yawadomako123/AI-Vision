@@ -11,7 +11,6 @@ COLORS = {
     "line_crossing": (0, 200, 255),
     "loitering": (220, 120, 0),
     "occupancy": (200, 0, 200),
-    "counting_line": (120, 200, 60),
 }
 HIT_COLOR = (0, 0, 255)
 
@@ -25,7 +24,7 @@ def draw_rules(img: np.ndarray, rules, highlight: str | None = None) -> np.ndarr
         pts = rule.pixel_points(w, h)
         color = COLORS.get(rule.type, (255, 255, 255))
         thick = 3 if rule.id == highlight else 2
-        if rule.type in ("line_crossing", "counting_line"):
+        if rule.type == "line_crossing":
             cv2.line(img, tuple(pts[0]), tuple(pts[1]), color, thick + 1, cv2.LINE_AA)
             cv2.circle(img, tuple(pts[0]), 5, color, -1)
             label_at = pts[0]

@@ -1,6 +1,6 @@
 # AI Vision Edge
 
-Local-first AI video analytics for IP cameras: detect and track people and vehicles, raise alerts from zones and tripwires, and review everything in a live web dashboard. Everything runs on one machine, and every component is free and open source. See [ai-vision-edge-project.md](ai-vision-edge-project.md) for the original spec.
+Local-first AI video analytics for IP cameras: detect and track people and vehicles, raise alerts from zones and lines, count entries and exits, and review everything in a live web dashboard. Everything runs on one machine, and every component is free and open source. See [ai-vision-edge-project.md](ai-vision-edge-project.md) for the original spec.
 
 ```
 Android phone (Larix) ─RTSP─┐
@@ -39,13 +39,13 @@ Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard 
 | **Live** | All cameras at once in a 1, 2×2 or 3×3 wall with detection boxes and track numbers, a red flash and label when a camera raises an alert, full screen per camera or for the whole wall. MediaMTX cameras play as smooth WebRTC video; others show a preview refreshed every second. Boxes and previews are only sent while the page is open |
 | **Events** | Filter, open a snapshot, then **Acknowledge**, **Resolve** or mark **False alarm** with a note (your username is recorded) |
 | **Cameras** | Add, edit, test, enable or disable, and delete cameras; **Live view**; **Rules** opens the rule editor |
-| **Rules** (per camera) | Draw **Zones**, **Tripwires**, **Loitering** and **Occupancy** areas and **Counter** lines on a current camera image, drag corners to adjust, and set severity, classes, timing and direction. The worker applies changes within 3 s |
-| **Analytics** | People and vehicles in view per hour or day, entries and exits from counter lines, events by type, rule false-alarm rates, CSV export (24 h / 7 d / 30 d, per camera) |
+| **Rules** (per camera) | Draw **Zones**, **Lines** and **Loitering** areas (**Occupancy** is under *More rule types*) on a current camera image, drag corners to adjust, and set severity, classes, timing and direction. The worker applies changes within 3 s |
+| **Analytics** | People and vehicles in view per hour or day, entries and exits from lines, events by type, rule false-alarm rates, CSV export (24 h / 7 d / 30 d, per camera) |
 | **Settings** | System health, data retention, your password, users and roles (admins), audit log (admins) |
 
-**Arm / Disarm:** the switch at the top of the sidebar. While disarmed, zone, tripwire, loitering and occupancy rules don't raise alerts (for example while you're home). Camera-offline alerts keep working, and every arm and disarm is recorded in the audit log. Operators can arm and disarm too. Counter lines keep counting while disarmed, because they never alert.
+**Arm / Disarm:** the switch at the top of the sidebar. While disarmed, rules don't raise alerts (for example while you're home). Camera-offline alerts keep working, and every arm and disarm is recorded in the audit log. Operators can arm and disarm too. Lines keep counting entries and exits while disarmed.
 
-**Entry/exit counting:** draw a **Counter** line across a door, gate or driveway. An arrow shows which way counts as *in*. It counts people and vehicles crossing each way, without alerts. Totals per line and per hour/day are in **Analytics → Entries and exits**, with CSV export. Only minutes with crossings are stored, so it costs almost nothing.
+**Lines (entry/exit counting and tripwires):** draw a **Line** across a door, gate or driveway. An arrow shows which way counts as *in*. Every line counts people and vehicles crossing each way. Tick **Alert on crossing** to also raise an alert, optionally for one direction only (a tripwire); leave it off for a count-only line. Totals per line and per hour/day are in **Analytics → Entries and exits**, with CSV export. Only minutes with crossings are stored, so it costs almost nothing.
 
 **Active hours:** in the rule editor, set a rule to *Only at certain times*, for example weekdays 22:00–06:00. Windows that cross midnight run into the next morning. Times are the edge computer's local time.
 
@@ -108,7 +108,7 @@ Pick one and the **Add camera** form opens pre-filled. Press **Check stream** to
 
 **Adding by hand:** enter the RTSP URL (prefer the low-resolution substream) (prefer the low-resolution substream), for example `rtsp://user:pass@192.168.1.50:554/stream2`. Passwords are encrypted in the database and never shown again. For live view in the browser, also add the camera as a MediaMTX source (see `infra/mediamtx/mediamtx.yml`) and register `rtsp://127.0.0.1:8554/<path>` instead.
 
-**Public live webcams (testing without a camera):** `scripts/live-test.py` runs the whole system on any live stream for a few minutes. It adds a temporary camera with a zone and a counter line, prints status every 30 s, then removes it. It accepts RTSP, HLS (`.m3u8`) or a YouTube live link (resolved with `yt-dlp`; those addresses expire after a few hours, so they suit tests only):
+**Public live webcams (testing without a camera):** `scripts/live-test.py` runs the whole system on any live stream for a few minutes. It adds a temporary camera with a zone and a count-only line, prints status every 30 s, then removes it. It accepts RTSP, HLS (`.m3u8`) or a YouTube live link (resolved with `yt-dlp`; those addresses expire after a few hours, so they suit tests only):
 
 ```powershell
 cd services\backend
@@ -269,7 +269,7 @@ cd ..\backend
 uv run python ..\..\scripts\e2e.py
 ```
 
-It adds a temporary camera and rules, streams a person walking through a zone and across a tripwire, and checks:
+It adds a temporary camera and rules, streams a person walking through a zone and across a line, and checks:
 - the alerts arrive with snapshots over the WebSocket
 - review works and records the reviewer
 - people counts and counter-line entries/exits reach analytics, and CSV export works
@@ -279,7 +279,16 @@ It adds a temporary camera and rules, streams a person walking through a zone an
 
 Then it removes the temporary camera and rules.
 
-## Deploying to an edge box (Docker)
+## Deploying to an edge box
+
+**Recommended on Windows: run natively with the supervisor.** It's lighter than Docker (no 2.9 GB worker image, no VM memory limit), it uses the Intel GPU directly, and **Find cameras** can see your network. Set it up once:
+1. Follow *First-time setup*.
+2. Run `.\scripts\install-autostart.ps1`.
+3. Turn on Docker Desktop's *Start when you sign in* (Docker only runs the database and MediaMTX).
+
+See *Running unattended*.
+
+**Linux mini PC: everything in Docker.** Use this for a dedicated Linux box. Give the `api` service host networking (`network_mode: host`) if you want **Find cameras**, because from Docker's default network it can't see your home network.
 
 ```powershell
 docker compose --profile full up -d --build    # MediaMTX, PostgreSQL, API + dashboard, worker

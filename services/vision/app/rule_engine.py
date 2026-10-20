@@ -1,5 +1,5 @@
 """Turns tracked detections into rule hits: zone entry, line crossing, loitering, occupancy.
-Counting lines raise no alerts: their crossings are collected for entry/exit analytics.
+Every line also counts crossings for entry/exit analytics; a line with alert=False only counts.
 
 Geometry is stored normalized (0..1) so rules survive resolution changes; it is scaled to
 pixels on the first frame of each size. Objects are located by their bottom-center point
@@ -18,10 +18,9 @@ from app.detector import COCO_CLASSES
 
 log = logging.getLogger(__name__)
 
-RULE_TYPES = {"zone_entry", "line_crossing", "loitering", "occupancy", "counting_line"}
-LINE_TYPES = {"line_crossing", "counting_line"}
+RULE_TYPES = {"zone_entry", "line_crossing", "loitering", "occupancy"}
 ANCHOR = (sv.Position.BOTTOM_CENTER,)
-DEFAULT_SEVERITY = {"zone_entry": "high", "line_crossing": "medium", "loitering": "medium", "occupancy": "medium", "counting_line": "low"}
+DEFAULT_SEVERITY = {"zone_entry": "high", "line_crossing": "medium", "loitering": "medium", "occupancy": "medium"}
 
 
 @dataclass
@@ -33,8 +32,10 @@ class Rule:
     classes: set[str] = field(default_factory=lambda: {"person"})
     severity: str = "medium"
     cooldown_seconds: float = 30.0
-    # line_crossing: in | out | both. "in" = crossing left to right, facing from point 1 to point 2.
+    # line_crossing: which crossings alert (in | out | both). "in" = crossing left to right,
+    # facing from point 1 to point 2. Counting always counts both ways.
     direction: str = "both"
+    alert: bool = True  # line_crossing: False = count only, never alert
     dwell_seconds: float = 20.0  # loitering
     max_count: int = 3  # occupancy: alert when count > max_count
     min_confidence: float = 0.0  # ignore detections below this for this rule (0 = worker default)
@@ -45,11 +46,14 @@ class Rule:
     @classmethod
     def from_dict(cls, d: dict) -> "Rule":
         rule_type = d["type"]
+        alert = bool(d.get("alert", True))
+        if rule_type == "counting_line":  # older name for a count-only line
+            rule_type, alert = "line_crossing", False
         if rule_type not in RULE_TYPES:
             raise ValueError(f"unknown rule type {rule_type!r}")
         points = d.get("points") or d.get("polygon") or [d["start"], d["end"]]
-        need = 2 if rule_type in LINE_TYPES else 3
-        if len(points) < need or (rule_type in LINE_TYPES and len(points) != 2):
+        need = 2 if rule_type == "line_crossing" else 3
+        if len(points) < need or (rule_type == "line_crossing" and len(points) != 2):
             raise ValueError(f"rule {d.get('id')}: {rule_type} needs {'2' if need == 2 else '3+'} points")
         return cls(
             id=d["id"],
@@ -60,6 +64,7 @@ class Rule:
             severity=d.get("severity", DEFAULT_SEVERITY[rule_type]),
             cooldown_seconds=float(d.get("cooldown_seconds", 30)),
             direction=d.get("direction", "both"),
+            alert=alert,
             dwell_seconds=float(d.get("dwell_seconds", 20)),
             max_count=int(d.get("max_count", 3)),
             min_confidence=float(d.get("min_confidence") or 0.0),
@@ -113,7 +118,7 @@ class _RuleState:
     def __init__(self, rule: Rule, width: int, height: int):
         self.rule = rule
         pts = rule.pixel_points(width, height)
-        if rule.type in LINE_TYPES:
+        if rule.type == "line_crossing":
             self.line = sv.LineZone(sv.Point(*pts[0]), sv.Point(*pts[1]), triggering_anchors=ANCHOR)
         else:
             self.zone = sv.PolygonZone(pts, triggering_anchors=ANCHOR)
@@ -142,7 +147,7 @@ class RuleEngine:
         self.rules = rules
         self._states: list[_RuleState] = []
         self._size: tuple[int, int] | None = None
-        self._crossings: list[tuple[Rule, str, str]] = []  # counting lines: (rule, class, in|out)
+        self._crossings: list[tuple[Rule, str, str]] = []  # line crossings: (rule, class, in|out)
 
     def set_rules(self, rules: list[Rule]) -> None:
         self.rules = rules
@@ -170,7 +175,7 @@ class RuleEngine:
         return hits
 
     def take_crossings(self) -> list[tuple[Rule, str, str]]:
-        """Counting-line crossings since the last call: (rule, class name, "in" | "out")."""
+        """Line crossings since the last call, for entry/exit counts: (rule, class name, "in" | "out")."""
         out, self._crossings = self._crossings, []
         return out
 
@@ -202,27 +207,18 @@ class RuleEngine:
         return hits
 
     def _line_crossing(self, state, dets, pos, names, now):
-        if not len(dets):
-            state.line.trigger(pos)  # age crossing history
-            return []
-        crossed_in, crossed_out = state.line.trigger(pos)
+        crossed_in, crossed_out = state.line.trigger(pos)  # also ages crossing history when empty
         hits = []
         for i in range(len(dets)):
             for crossed, direction in ((crossed_in[i], "in"), (crossed_out[i], "out")):
-                if not crossed or state.rule.direction not in (direction, "both"):
+                if not crossed:
+                    continue
+                self._crossings.append((state.rule, str(names[i]), direction))
+                if not state.rule.alert or state.rule.direction not in (direction, "both"):
                     continue
                 if state.cooled_down((int(dets.tracker_id[i]), direction), now):
                     hits.append(self._hit(state, "line_crossing", now, dets, names, i, direction=direction))
         return hits
-
-    def _counting_line(self, state, dets, pos, names, now):
-        crossed_in, crossed_out = state.line.trigger(pos)  # also ages history when empty
-        for i in range(len(dets)):
-            if crossed_in[i]:
-                self._crossings.append((state.rule, str(names[i]), "in"))
-            if crossed_out[i]:
-                self._crossings.append((state.rule, str(names[i]), "out"))
-        return []
 
     def _loitering(self, state, dets, pos, names, now):
         in_zone = state.zone.trigger(pos) if len(dets) else np.zeros(0, bool)

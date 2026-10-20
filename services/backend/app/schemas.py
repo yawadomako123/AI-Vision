@@ -137,8 +137,7 @@ class EventPage(BaseModel):
 
 # --- Rules -------------------------------------------------------------------
 
-RuleType = Literal["zone_entry", "line_crossing", "loitering", "occupancy", "counting_line"]
-LINE_TYPES = {"line_crossing", "counting_line"}
+RuleType = Literal["zone_entry", "line_crossing", "loitering", "occupancy"]
 DetectClass = Literal["person", "bicycle", "car", "motorcycle", "bus", "truck"]
 Point = tuple[float, float]
 
@@ -147,9 +146,9 @@ def _check_points(rule_type: str, points: list[Point]) -> list[Point]:
     for x, y in points:
         if not (0 <= x <= 1 and 0 <= y <= 1):
             raise ValueError("points must be normalized: 0 <= x, y <= 1")
-    if rule_type in LINE_TYPES and len(points) != 2:
+    if rule_type == "line_crossing" and len(points) != 2:
         raise ValueError("a line needs exactly 2 points")
-    if rule_type not in LINE_TYPES and not 3 <= len(points) <= 50:
+    if rule_type != "line_crossing" and not 3 <= len(points) <= 50:
         raise ValueError("a zone needs 3 to 50 points")
     return points
 
@@ -176,6 +175,7 @@ class RuleBase(BaseModel):
     severity: Literal["high", "medium", "low"] = "medium"
     cooldown_seconds: float = Field(default=30, ge=0, le=86400)
     direction: Literal["in", "out", "both"] = "both"
+    alert: bool = True  # lines: False = count crossings only, never alert
     dwell_seconds: float = Field(default=20, ge=1, le=86400)
     max_count: int = Field(default=3, ge=0, le=1000)
     min_confidence: float = Field(default=0.0, ge=0, le=1)  # 0 = use the worker's default
@@ -200,6 +200,7 @@ class RuleUpdate(BaseModel):
     severity: Literal["high", "medium", "low"] | None = None
     cooldown_seconds: float | None = Field(default=None, ge=0, le=86400)
     direction: Literal["in", "out", "both"] | None = None
+    alert: bool | None = None
     dwell_seconds: float | None = Field(default=None, ge=1, le=86400)
     max_count: int | None = Field(default=None, ge=0, le=1000)
     min_confidence: float | None = Field(default=None, ge=0, le=1)

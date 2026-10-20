@@ -115,8 +115,8 @@ export interface AuthStatus {
   user: User | null;
 }
 
-export type RuleType = "zone_entry" | "line_crossing" | "loitering" | "occupancy" | "counting_line";
-export const isLine = (t: RuleType) => t === "line_crossing" || t === "counting_line";
+export type RuleType = "zone_entry" | "line_crossing" | "loitering" | "occupancy";
+export const isLine = (t: RuleType) => t === "line_crossing";
 export type Point = [number, number];
 
 export interface Rule {
@@ -129,6 +129,7 @@ export interface Rule {
   severity: Severity;
   cooldown_seconds: number;
   direction: "in" | "out" | "both";
+  alert: boolean; // lines: false = count crossings only
   dwell_seconds: number;
   max_count: number;
   min_confidence: number;

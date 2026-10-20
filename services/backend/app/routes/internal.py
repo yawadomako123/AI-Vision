@@ -41,15 +41,19 @@ def worker_cameras(db: Session = Depends(get_db)):
 
 @router.get("/rules", response_model=dict[int, list[RuleOut]])
 def worker_rules(db: Session = Depends(get_db)):
-    """Enabled rules grouped by camera id. While the system is disarmed only counting lines are
-    sent (they never alert), so no alert rule can fire; camera health alerts are raised
-    independently and keep working."""
+    """Enabled rules grouped by camera id. While the system is disarmed only lines are sent, with
+    alerts switched off, so they keep counting entries/exits but no rule can fire; camera health
+    alerts are raised independently and keep working."""
+    armed = get_settings(db, "system")["armed"]
     query = select(DetectionRule).where(DetectionRule.enabled).order_by(DetectionRule.id)
-    if not get_settings(db, "system")["armed"]:
-        query = query.where(DetectionRule.type == "counting_line")
+    if not armed:
+        query = query.where(DetectionRule.type == "line_crossing")
     grouped: dict[int, list[RuleOut]] = {}
     for rule in db.scalars(query):
-        grouped.setdefault(rule.camera_id, []).append(RuleOut.model_validate(rule))
+        out = RuleOut.model_validate(rule)
+        if not armed:
+            out.alert = False
+        grouped.setdefault(rule.camera_id, []).append(out)
     return grouped
 
 

@@ -138,8 +138,8 @@ function DisarmedBanner() {
   if (!arming.data || arming.data.armed) return null;
   return (
     <p role="status" className="mb-5 rounded-lg border border-warn/50 bg-warn/10 px-4 py-2.5 text-sm text-warn">
-      <strong>Disarmed</strong>: zone, tripwire, loitering and occupancy rules won't raise alerts until you arm again.
-      Camera offline alerts still work.
+      <strong>Disarmed</strong>: rules won't raise alerts until you arm again. Lines keep counting entries and exits,
+      and camera offline alerts still work.
     </p>
   );
 }

@@ -153,14 +153,29 @@ def test_line_direction_convention():
     assert [h.details["direction"] for h in hits] == ["in"]
 
 
-def test_counting_line_counts_without_alerting():
-    e = RuleEngine([Rule.from_dict({"id": "rule9", "type": "counting_line", "name": "Door",
+def test_count_only_line_counts_without_alerting():
+    e = RuleEngine([Rule.from_dict({"id": "rule9", "type": "line_crossing", "name": "Door", "alert": False,
                                     "points": [[0.5, 0.0], [0.5, 1.0]], "classes": ["person", "car"]})])
     for t, xs in enumerate([(0.3, 0.7), (0.4, 0.6), (0.6, 0.4), (0.7, 0.3), (0.6, 0.3), (0.4, 0.3)]):
         assert e.update(dets((1, xs[0], 0.5), (2, xs[1], 0.5, CAR)), W, H, float(t)) == []
     got = sorted((r.id, name, d) for r, name, d in e.take_crossings())
     assert got == [("rule9", "car", "out"), ("rule9", "person", "in"), ("rule9", "person", "out")]
     assert e.take_crossings() == []  # drained
+
+
+def test_alerting_line_also_counts_both_ways():
+    e = RuleEngine([Rule.from_dict({"id": "l", "type": "line_crossing", "points": [[0.5, 0.0], [0.5, 1.0]],
+                                    "direction": "in", "cooldown_seconds": 0})])
+    hits = []
+    for t, x in enumerate([0.3, 0.7, 0.3]):
+        hits += e.update(dets((7, x, 0.5)), W, H, float(t))
+    assert [h.details["direction"] for h in hits] == ["in"]  # only "in" alerts
+    assert sorted(d for _, _, d in e.take_crossings()) == ["in", "out"]  # but both are counted
+
+
+def test_legacy_counting_line_becomes_count_only_line():
+    r = Rule.from_dict({"id": "x", "type": "counting_line", "points": [[0, 0], [1, 1]]})
+    assert r.type == "line_crossing" and r.alert is False
 
 
 def test_loitering_after_dwell_time():

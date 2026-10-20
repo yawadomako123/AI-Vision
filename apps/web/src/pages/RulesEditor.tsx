@@ -6,12 +6,11 @@ import { api, isLine, type Point, type Rule, type RuleInput, type RuleType } fro
 import { useAuth } from "../auth";
 import { Button, Card, Empty, ErrorNote, inputCls, selectCls } from "../components/ui";
 
-const TYPES: { type: RuleType; label: string; hint: string; color: string }[] = [
+const TYPES: { type: RuleType; label: string; hint: string; color: string; more?: boolean }[] = [
   { type: "zone_entry", label: "Zone", hint: "Alert when someone enters", color: "var(--bad)" },
-  { type: "line_crossing", label: "Tripwire", hint: "Alert when someone crosses a line", color: "var(--warn)" },
+  { type: "line_crossing", label: "Line", hint: "Count people crossing, and optionally alert", color: "var(--warn)" },
   { type: "loitering", label: "Loitering", hint: "Alert when someone stays too long", color: "var(--accent)" },
-  { type: "occupancy", label: "Occupancy", hint: "Alert when too many people are inside", color: "#9085e9" },
-  { type: "counting_line", label: "Counter", hint: "Count people and vehicles going in and out (no alerts)", color: "var(--ok)" },
+  { type: "occupancy", label: "Occupancy", hint: "Alert when too many people are inside", color: "#9085e9", more: true },
 ];
 const typeInfo = (t: RuleType) => TYPES.find((x) => x.type === t)!;
 const CLASSES = ["person", "bicycle", "car", "motorcycle", "bus", "truck"];
@@ -73,14 +72,20 @@ function RuleForm({ rule, canEdit, onDeleted }: { rule: Rule; canEdit: boolean; 
           <span className="text-xs font-medium text-muted">Name</span>
           <input className={inputCls} value={form.name} onChange={(e) => set("name", e.target.value)} required maxLength={120} />
         </label>
-        {form.type === "counting_line" && (
-          <p className="text-xs text-muted">
-            Counts crossings without raising alerts, even while the system is disarmed. Crossing the way the arrow points
-            counts as <strong className="text-text">in</strong>. Totals are in Analytics → Entries and exits.
-          </p>
+        {form.type === "line_crossing" && (
+          <>
+            <p className="text-xs text-muted">
+              Counts everyone crossing, both ways (Analytics → Entries and exits), even while disarmed. Crossing the way
+              the arrow points counts as <strong className="text-text">in</strong>.
+            </p>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={form.alert} onChange={(e) => set("alert", e.target.checked)} />
+              Alert on crossing
+            </label>
+          </>
         )}
         <div className="grid grid-cols-2 gap-3">
-          {form.type !== "counting_line" && (<>
+          {(form.type !== "line_crossing" || form.alert) && (<>
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted">Severity</span>
             <select className={selectCls} value={form.severity} onChange={(e) => set("severity", e.target.value as Rule["severity"])}>
@@ -113,9 +118,9 @@ function RuleForm({ rule, canEdit, onDeleted }: { rule: Rule; canEdit: boolean; 
                    value={Math.round(form.min_confidence * 100)} title="0 = use the worker's default. Raise it to cut false alarms on this rule."
                    onChange={(e) => set("min_confidence", Math.min(1, Math.max(0, Number(e.target.value) / 100)))} />
           </label>
-          {form.type === "line_crossing" && (
+          {form.type === "line_crossing" && form.alert && (
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted">Direction (arrow = in)</span>
+              <span className="text-xs font-medium text-muted">Alert direction (arrow = in)</span>
               <select className={selectCls} value={form.direction} onChange={(e) => set("direction", e.target.value as Rule["direction"])}>
                 <option value="both">Both ways</option><option value="in">In only</option><option value="out">Out only</option>
               </select>
@@ -207,6 +212,7 @@ export default function RulesEditor() {
   const [frameState, setFrameState] = useState<"loading" | "ok" | "error">("loading");
   const [aspect, setAspect] = useState("16 / 9");
   const [tool, setTool] = useState<RuleType | null>(null);
+  const [showMore, setShowMore] = useState(false);
   const [draft, setDraft] = useState<Point[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [dragging, setDragging] = useState<{ ruleId: number; index: number; points: Point[] } | null>(null);
@@ -305,13 +311,16 @@ export default function RulesEditor() {
         <div className="flex flex-col gap-3">
           {isAdmin && (
             <div className="flex flex-wrap items-center gap-2" role="toolbar" aria-label="Draw a rule">
-              {TYPES.map((t) => (
+              {TYPES.filter((t) => !t.more || showMore || tool === t.type).map((t) => (
                 <Button key={t.type} variant={tool === t.type ? "primary" : "secondary"} title={t.hint}
                         onClick={() => { setTool(tool === t.type ? null : t.type); setDraft([]); setSelected(null); }}>
                   <span className="size-2.5 rounded-sm" style={{ background: t.color }} aria-hidden />
                   {t.label}
                 </Button>
               ))}
+              {!showMore && (
+                <button type="button" onClick={() => setShowMore(true)} className="px-1 text-sm text-accent">More rule types</button>
+              )}
               {tool && !isLine(tool) && (
                 <Button variant="primary" disabled={draft.length < 3} onClick={() => finish()}>Finish ({draft.length} points)</Button>
               )}
@@ -320,7 +329,7 @@ export default function RulesEditor() {
           <p className="text-xs text-muted" aria-live="polite">
             {tool
               ? isLine(tool)
-                ? `Click two points to draw the ${tool === "counting_line" ? "counting line" : "tripwire"}. Facing from the first point to the second, crossing left to right counts as "in".`
+                ? 'Click two points to draw the line. Facing from the first point to the second, crossing left to right counts as "in".'
                 : "Click the corners of the area on the floor. Enter or Finish to save, Backspace to undo, Esc to cancel."
               : isAdmin
                 ? "Pick a rule type to draw, or click a rule to edit it. Drag a selected rule's corners to adjust."
@@ -370,7 +379,7 @@ export default function RulesEditor() {
                 {r.name}
               </button>
             ))}
-            {shown.filter((r) => isLine(r.type) && (r.type === "counting_line" || r.direction !== "both" || r.id === selected)).map((r) => (
+            {shown.filter((r) => isLine(r.type)).map((r) => (
               <InArrow key={`arrow-${r.id}`} points={r.points} aspect={aspectRatio} color={typeInfo(r.type).color} />
             ))}
             {selectedRule && !tool && shown.find((r) => r.id === selected)!.points.map((p, i) => (

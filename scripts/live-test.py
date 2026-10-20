@@ -71,7 +71,7 @@ def main() -> int:
         "type": "zone_entry", "name": "Live test zone", "severity": "low", "cooldown_seconds": 30,
         "points": [[0.25, 0.25], [0.75, 0.25], [0.75, 0.95], [0.25, 0.95]]})
     admin.post(f"/api/cameras/{cam_id}/rules", json={
-        "type": "counting_line", "name": "Live test counter", "classes": ["person", "car", "bicycle", "bus", "truck"],
+        "type": "line_crossing", "alert": False, "name": "Live test counter", "classes": ["person", "car", "bicycle", "bus", "truck"],
         "points": [[0.5, 0.05], [0.5, 0.95]]})
     was_armed = admin.get("/api/arming").json()["armed"]
     admin.put("/api/arming", json={"armed": True})

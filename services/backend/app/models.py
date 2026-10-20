@@ -69,13 +69,15 @@ class DetectionRule(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"), index=True)
-    type: Mapped[str] = mapped_column(String(30))  # zone_entry | line_crossing | loitering | occupancy | counting_line
+    type: Mapped[str] = mapped_column(String(30))  # zone_entry | line_crossing | loitering | occupancy
     name: Mapped[str] = mapped_column(String(120))
     points: Mapped[list] = mapped_column(JSON)
     classes: Mapped[list] = mapped_column(JSON, default=lambda: ["person"])
     severity: Mapped[str] = mapped_column(String(20), default="medium")
     cooldown_seconds: Mapped[float] = mapped_column(Float, default=30)
     direction: Mapped[str] = mapped_column(String(10), default="both")
+    # Lines always count crossings (entry/exit analytics); alert=False makes one count-only.
+    alert: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     dwell_seconds: Mapped[float] = mapped_column(Float, default=20)
     max_count: Mapped[int] = mapped_column(default=3)
     min_confidence: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")

@@ -22,7 +22,7 @@ def test_minute_rollover_emits_avg_and_peak():
 
 
 def test_line_counter_per_minute_in_out():
-    door = Rule.from_dict({"id": "rule4", "type": "counting_line", "name": "Door", "points": [[0, 0], [1, 1]]})
+    door = Rule.from_dict({"id": "rule4", "type": "line_crossing", "name": "Door", "alert": False, "points": [[0, 0], [1, 1]]})
     c = LineCounter(camera_id=2)
     assert c.add([], ts(0, 1)) == [] and c.flush() == []  # quiet minute: nothing to send
     c.add([(door, "person", "in"), (door, "person", "in"), (door, "truck", "out")], ts(0, 10))

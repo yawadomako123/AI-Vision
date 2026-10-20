@@ -225,7 +225,8 @@ def test_csv_export(client, camera):
 
 # --- entry/exit counting lines ----------------------------------------------------
 
-COUNTER = {"type": "counting_line", "name": "Front door", "points": [[0.5, 0], [0.5, 1]], "classes": ["person", "car"]}
+COUNTER = {"type": "line_crossing", "alert": False, "name": "Front door", "points": [[0.5, 0], [0.5, 1]],
+           "classes": ["person", "car"]}
 
 
 def line_sample(camera_id, rule_id, minutes_ago, n_in, n_out, cls="person", name="Front door"):
@@ -239,10 +240,13 @@ def test_counting_line_keeps_counting_while_disarmed(client, camera):
     assert client.post(url, json={**COUNTER, "points": [[0, 0], [1, 0], [1, 1]]}).status_code == 422
     client.post(url, json=ZONE)
     client.post(url, json=COUNTER)
-    feed = lambda: [r["type"] for r in client.get("/api/internal/rules", headers=WORKER).json()[str(camera["id"])]]
-    assert feed() == ["zone_entry", "counting_line"]
+    client.post(url, json={**COUNTER, "name": "Gate", "alert": True})
+    feed = lambda: [(r["type"], r["alert"]) for r in client.get("/api/internal/rules", headers=WORKER).json()[str(camera["id"])]]
+    assert feed() == [("zone_entry", True), ("line_crossing", False), ("line_crossing", True)]
     client.put("/api/arming", json={"armed": False})
-    assert feed() == ["counting_line"]  # counting never alerts, so it keeps going
+    # Disarmed: lines keep counting, with alerts off; other rules aren't sent at all.
+    assert feed() == [("line_crossing", False), ("line_crossing", False)]
+    assert client.post(url, json={**COUNTER, "type": "counting_line"}).status_code == 422  # merged into lines
     client.put("/api/arming", json={"armed": True})
 
 

@@ -96,7 +96,7 @@ function EntriesCard({ entries, labels, tooltipLabels, csvUrl }: {
       <a className="text-sm font-medium text-accent" href={csvUrl} download>Export (CSV)</a>
     )}>
       {lines.length === 0 ? (
-        <Empty>No counts in this period. Draw a <strong>Counter</strong> line across a door or gate in a camera's rules to count people going in and out.</Empty>
+        <Empty>No counts in this period. Draw a <strong>Line</strong> across a door or gate in a camera's rules to count people going in and out.</Empty>
       ) : (
         <div className="flex flex-col gap-3 p-4">
           <Legend series={series} />
@@ -207,8 +207,8 @@ export default function Analytics() {
         <Stat label="Most vehicles at once" value={Math.max(0, ...vehicles.peak)} />
         <Stat label="Events" value={totalEvents} sub={range.label.toLowerCase()} />
         {entries.data?.lines.length
-          ? <Stat label="In / out" value={`${entries.data.total.in} / ${entries.data.total.out}`} sub="counting lines" />
-          : <Stat label="Tripwire alerts" value={crossings} sub="line crossings" />}
+          ? <Stat label="In / out" value={`${entries.data.total.in} / ${entries.data.total.out}`} sub="entries / exits" />
+          : <Stat label="Line alerts" value={crossings} sub="line crossings" />}
       </div>
 
       <Card title="People and vehicles in view (most at once)">

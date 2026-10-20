@@ -182,7 +182,7 @@ def main() -> int:
     line = admin.post(f"/api/cameras/{cam_id}/rules", json={
         "type": "line_crossing", "name": "E2E line", "points": [[0.45, 0.02], [0.45, 0.98]]}).json()
     counter = admin.post(f"/api/cameras/{cam_id}/rules", json={
-        "type": "counting_line", "name": "E2E counter", "points": [[0.5, 0.02], [0.5, 0.98]]}).json()
+        "type": "line_crossing", "alert": False, "name": "E2E counter", "points": [[0.5, 0.02], [0.5, 0.98]]}).json()
     check("Camera and rules created", "id" in zone and "id" in line and "id" in counter)
 
     worker = None
@@ -276,7 +276,8 @@ def main() -> int:
             return e["total"] if e["total"]["in"] + e["total"]["out"] else None
         moved = wait_for(entered, 100, interval=5)
         check("Counting line reports entries/exits (no alerts)", bool(moved)
-              and not admin.get("/api/events", params={"camera_id": cam_id, "event_type": "counting_line"}).json()["total"],
+              and not any(e["rule_name"] == "E2E counter" for e in admin.get(
+                  "/api/events", params={"camera_id": cam_id, "limit": 200}).json()["items"]),
               f"in {moved['in']}, out {moved['out']}" if moved else "no crossings")
 
         csv = admin.get("/api/events/export.csv", params={"camera_id": cam_id})
