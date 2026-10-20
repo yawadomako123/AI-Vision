@@ -7,6 +7,7 @@ Docs at http://127.0.0.1:8000/docs
 """
 
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 
@@ -93,7 +94,14 @@ async def live_updates(ws: WebSocket, db: Session = Depends(get_db)):
     await hub.connect(ws)
     try:
         while True:
-            await ws.receive_text()  # keep-alive; clients don't need to send anything
+            # Keep-alive, plus {"type": "watch", "cameras": [ids]} from the Live page.
+            text = await ws.receive_text()
+            try:
+                msg = json.loads(text)
+                if msg.get("type") == "watch":
+                    hub.watch(ws, {int(c) for c in msg.get("cameras", [])[:16]})
+            except (ValueError, TypeError, AttributeError):
+                pass
     except WebSocketDisconnect:
         pass
     finally:

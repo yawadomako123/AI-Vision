@@ -29,6 +29,7 @@ from app.config import settings
 from app.detector import COCO_CLASSES, Detector
 from app.event_publisher import EventPublisher
 from app.frame_reader import FrameReader
+from app.live import LivePublisher, live_payload
 from app.overlay import draw_rules
 from app.counts import LineCounter, MinuteCounter
 from app.rule_engine import Rule, RuleEngine, RuleHit, object_positions
@@ -60,7 +61,8 @@ def main() -> None:
     clip_config = ClipConfig(enabled=settings.clips_enabled)
     cameras: dict[int, dict] = {}
     # Runtime settings from the dashboard (Settings page); defaults until the API answers.
-    runtime = {"fps": settings.inference_fps, "search": False}
+    runtime = {"fps": settings.inference_fps, "search": False, "live": set()}
+    live = LivePublisher(settings.api_base_url, settings.service_token) if api else None
     embedder: SiglipEmbedder | None = None
 
     def apply_config(cfg: dict) -> None:
@@ -76,6 +78,7 @@ def main() -> None:
             for cam in cameras.values():  # tracker timing depends on the analysis rate
                 cam["tracker"] = sv.ByteTrack(frame_rate=max(1, round(fps)))
             log.info("Analysis speed: %.1f frames/s per camera", fps)
+        runtime["live"] = {int(c) for c in cfg.get("live_cameras", [])}
         want_search = bool(cfg.get("search_enabled"))
         if want_search and embedder is None:
             if (settings.search_model_dir / "vision.onnx").exists():
@@ -206,6 +209,9 @@ def main() -> None:
                 names = [COCO_CLASSES.get(int(c), str(c)) for c in detections.class_id]
                 cam["sightings"].update(detections, names, object_positions(detections, h).xyxy[:, :2],
                                         frame.image, frame.captured_at)
+                if live and cam["id"] in runtime["live"]:
+                    preview = frame.image if live.wants_preview(cam["id"], now) else None
+                    live.offer(live_payload(cam["id"], detections, names, w, h, frame.captured_at, preview))
                 samples = cam["counter"].add(names, frame.captured_at)
                 line_samples = cam["lines"].add(engine.take_crossings(), frame.captured_at)
                 if api:
@@ -257,6 +263,8 @@ def main() -> None:
             if api:
                 api.send_counts(cam["counter"].flush())  # partial last minute
                 api.send_line_counts(cam["lines"].flush())
+        if live:
+            live.close()
         if api:
             api.close()
         if args.show:

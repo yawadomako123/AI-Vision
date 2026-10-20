@@ -235,6 +235,22 @@ class LineCountIn(BaseModel):
     out_count: int = Field(ge=0, le=100_000)
 
 
+class LiveObject(BaseModel):
+    box: tuple[float, float, float, float]  # x1, y1, x2, y2 normalized 0..1
+    cls: str = Field(max_length=30)
+    track: int | None = None
+    conf: float = Field(ge=0, le=1)
+
+
+class LiveFrameIn(BaseModel):
+    camera_id: int
+    at: float  # unix time of the analysed frame
+    width: int = Field(ge=1, le=10000)
+    height: int = Field(ge=1, le=10000)
+    objects: list[LiveObject] = Field(default_factory=list, max_length=300)
+    preview: str | None = Field(default=None, max_length=700_000)  # base64 JPEG
+
+
 class SettingsOut(BaseModel):
     event_retention_days: int
     count_retention_days: int

@@ -1,6 +1,8 @@
 """Endpoints for the vision worker only, guarded by the shared service token."""
 
+import base64
 import secrets
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -10,11 +12,13 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.crypto import decrypt
 from app.db import get_db
-from app.live import hub, worker_contact
+from app.live import hub, live_previews, worker_contact
 from app.notifier import notifier
 from app.settings_store import get_settings
 from app.models import Camera, CountSample, DetectionRule, Event, LineCount
-from app.schemas import CameraStatusIn, CountSampleIn, EventIn, EventOut, InternalCamera, LineCountIn, RuleOut
+from app.schemas import (
+    CameraStatusIn, CountSampleIn, EventIn, EventOut, InternalCamera, LineCountIn, LiveFrameIn, RuleOut,
+)
 from app.serializers import event_out
 
 
@@ -54,7 +58,25 @@ def worker_config(db: Session = Depends(get_db)):
     """Settings the worker applies at runtime (polled with the rules)."""
     cfg = get_settings(db)
     return {"clips": {"enabled": cfg["clips_enabled"]}, "search_enabled": cfg["search_enabled"],
-            "analysis_fps": cfg["analysis_fps"]}
+            "analysis_fps": cfg["analysis_fps"], "live_cameras": sorted(hub.watched())}
+
+
+@router.post("/live", status_code=status.HTTP_204_NO_CONTENT)
+async def live_frame(body: LiveFrameIn):
+    """Detection boxes (and now and then a small preview image) for a camera on the live wall."""
+    preview = False
+    if body.preview:
+        try:
+            jpeg = base64.b64decode(body.preview, validate=True)
+        except ValueError:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "preview must be base64") from None
+        if jpeg[:2] == b"\xff\xd8":
+            live_previews[body.camera_id] = (jpeg, time.time())
+            preview = True
+    await hub.send_to_watchers(body.camera_id, "detections", {
+        "camera_id": body.camera_id, "at": body.at, "width": body.width, "height": body.height,
+        "objects": [o.model_dump() for o in body.objects], "preview": preview,
+    })
 
 
 @router.post("/counts", status_code=status.HTTP_204_NO_CONTENT)

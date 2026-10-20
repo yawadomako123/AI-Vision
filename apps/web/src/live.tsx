@@ -5,19 +5,44 @@ import { UNAUTHORIZED_EVENT, type Camera, type VisionEvent } from "./api";
 
 export type LiveState = "connecting" | "live" | "reconnecting";
 
+export interface LiveObject { box: [number, number, number, number]; cls: string; track: number | null; conf: number }
+export interface Detections {
+  camera_id: number;
+  at: number; // unix seconds of the analysed frame
+  width: number;
+  height: number;
+  objects: LiveObject[];
+  preview: boolean; // a new preview image is available
+}
+
 interface LiveContextValue {
   state: LiveState;
   /** Subscribe to newly created events; returns an unsubscribe function. */
   onEvent: (fn: (e: VisionEvent) => void) => () => void;
+  /** Live-wall boxes for watched cameras; returns an unsubscribe function. */
+  onDetections: (fn: (d: Detections) => void) => () => void;
+  /** Tell the server which cameras are on screen (empty = none). The worker only sends
+   * boxes and previews for these, so the live wall costs nothing when closed. */
+  watch: (cameraIds: number[]) => void;
 }
 
-const LiveContext = createContext<LiveContextValue>({ state: "connecting", onEvent: () => () => {} });
+const LiveContext = createContext<LiveContextValue>({
+  state: "connecting", onEvent: () => () => {}, onDetections: () => () => {}, watch: () => {},
+});
 
 /** One WebSocket for the whole app; keeps React Query caches fresh from server pushes. */
 export function LiveProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [state, setState] = useState<LiveState>("connecting");
   const listeners = useRef(new Set<(e: VisionEvent) => void>());
+  const detectionListeners = useRef(new Set<(d: Detections) => void>());
+  const watching = useRef<number[]>([]);
+  const socket = useRef<WebSocket | null>(null);
+  const sendWatch = () => {
+    if (socket.current?.readyState === WebSocket.OPEN) {
+      socket.current.send(JSON.stringify({ type: "watch", cameras: watching.current }));
+    }
+  };
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -28,16 +53,21 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     const connect = () => {
       const proto = location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${proto}://${location.host}/api/ws`);
+      socket.current = ws;
 
       ws.onopen = () => {
         setState("live");
         retryMs = 1000;
+        sendWatch(); // the server forgets what we watched when the connection drops
         qc.invalidateQueries(); // catch up on anything missed while disconnected
       };
 
       ws.onmessage = (msg) => {
         const { type, data } = JSON.parse(msg.data);
         switch (type) {
+          case "detections":
+            detectionListeners.current.forEach((fn) => fn(data as Detections));
+            break;
           case "event":
             listeners.current.forEach((fn) => fn(data as VisionEvent));
             qc.invalidateQueries({ queryKey: ["events"] });
@@ -96,7 +126,15 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       listeners.current.delete(fn);
     };
   }, []);
-  const value = useMemo(() => ({ state, onEvent }), [state, onEvent]);
+  const onDetections = useCallback((fn: (d: Detections) => void) => {
+    detectionListeners.current.add(fn);
+    return () => {
+      detectionListeners.current.delete(fn);
+    };
+  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const watch = useCallback((ids: number[]) => { watching.current = ids; sendWatch(); }, []);
+  const value = useMemo(() => ({ state, onEvent, onDetections, watch }), [state, onEvent, onDetections, watch]);
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
 }
 

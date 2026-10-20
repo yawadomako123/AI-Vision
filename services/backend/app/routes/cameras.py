@@ -14,7 +14,7 @@ from app.audit import audit
 from app.auth import current_user, require_admin
 from app.crypto import decrypt, encrypt, mask_url
 from app.db import get_db
-from app.live import hub
+from app.live import hub, latest_preview
 from app.models import Camera, User
 from app.schemas import CameraCreate, CameraOut, CameraTestResult, CameraUpdate, OnvifStreamsIn, StreamProbeIn
 from app.serializers import camera_out
@@ -154,6 +154,15 @@ def probe_stream(body: StreamProbeIn, _: User = Depends(require_admin)):
             return CameraTestResult(ok=True, width=frame.width, height=frame.height, codec=stream.codec_context.name)
     except Exception as exc:  # noqa: BLE001
         return CameraTestResult(ok=False, error=_redact(exc, body.stream_url))
+
+
+@router.get("/{camera_id}/preview", responses={200: {"content": {"image/jpeg": {}}}})
+def camera_preview(camera_id: int, _: User = Depends(current_user)):
+    """Newest live-wall preview from the worker (only while the camera is being watched)."""
+    jpeg = latest_preview(camera_id)
+    if jpeg is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no live preview yet")
+    return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.post("/{camera_id}/test", response_model=CameraTestResult)

@@ -197,7 +197,7 @@ def test_clip_ingest_retention_and_cap(client, camera, db_session, tmp_path):
 
 def test_worker_config(client):
     assert client.get("/api/internal/config", headers=WORKER).json() == {
-        "clips": {"enabled": True}, "search_enabled": False, "analysis_fps": 3}
+        "clips": {"enabled": True}, "search_enabled": False, "analysis_fps": 3, "live_cameras": []}
     client.patch("/api/settings", json={"clips_enabled": False, "analysis_fps": 2})
     cfg = client.get("/api/internal/config", headers=WORKER).json()
     assert cfg["clips"] == {"enabled": False} and cfg["analysis_fps"] == 2

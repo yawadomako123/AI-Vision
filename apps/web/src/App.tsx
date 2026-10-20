@@ -9,6 +9,7 @@ import { useLive } from "./live";
 import Analytics from "./pages/Analytics";
 import Cameras from "./pages/Cameras";
 import Events from "./pages/Events";
+import Live from "./pages/Live";
 import Overview from "./pages/Overview";
 import RulesEditor from "./pages/RulesEditor";
 import Search from "./pages/Search";
@@ -35,6 +36,7 @@ function Nav() {
   return (
     <nav aria-label="Main" className="flex gap-1 md:flex-col">
       <NavLink to="/" end className={link}>Overview</NavLink>
+      <NavLink to="/live" className={link}>Live</NavLink>
       <NavLink to="/events" className={link}>
         Events
         {unreviewed > 0 && (
@@ -124,6 +126,7 @@ export default function App() {
         <DisarmedBanner />
         <Routes>
           <Route path="/" element={<Overview />} />
+          <Route path="/live" element={<Live />} />
           <Route path="/events" element={<Events />} />
           <Route path="/search" element={<Search />} />
           <Route path="/cameras" element={<Cameras />} />

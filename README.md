@@ -36,6 +36,7 @@ Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard 
 | Page | What you do there |
 |---|---|
 | **Overview** | Cameras online, events in the last 24 h, items needing review, recent alerts |
+| **Live** | All cameras at once in a 1, 2×2 or 3×3 wall with detection boxes and track numbers, a red flash and label when a camera raises an alert, full screen per camera or for the whole wall. MediaMTX cameras play as smooth WebRTC video; others show a preview refreshed every second. Boxes and previews are only sent while the page is open |
 | **Events** | Filter, open a snapshot, then **Acknowledge**, **Resolve** or mark **False alarm** with a note (your username is recorded) |
 | **Cameras** | Add, edit, test, enable or disable, and delete cameras; **Live view**; **Rules** opens the rule editor |
 | **Rules** (per camera) | Draw **Zones**, **Tripwires**, **Loitering** and **Occupancy** areas and **Counter** lines on a current camera image, drag corners to adjust, and set severity, classes, timing and direction. The worker applies changes within 3 s |
