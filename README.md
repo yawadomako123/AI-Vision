@@ -165,6 +165,10 @@ The integrated GPU manages about 6.5 detections a second in total, shared betwee
 
 You'll then get high-severity alerts on your phone, at most one per rule per minute (both are adjustable).
 
+**Daily summary:** every morning at 08:00 (adjustable, or off) you also get one message about the last 24 hours, for example *"Last 24 h: 12 alerts (9 zone entry, 3 loitering), 3 to review. 214 in / 209 out. At most 6 people at once. All 3 cameras online."* **Send summary now** shows what it looks like.
+
+**System alerts:** you're also told when the vision worker stops or the disk is nearly full, whatever the severity setting (see *Running unattended*).
+
 **Privacy:** on the public `ntfy.sh` server, anyone who knows the topic can read the alerts, so keep the generated topic secret. Snapshot images are **not** attached by default. To keep everything, images included, on your own network, self-host ntfy:
 - Run `docker compose --profile ntfy up -d`.
 - Use server `http://<laptop IP>:2586` in Settings and in the app.

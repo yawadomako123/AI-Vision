@@ -24,6 +24,7 @@ from app.schemas import (
 )
 from app.settings_store import get_settings, update_settings
 from app.watchdog import watchdog
+from app.daily_summary import build_summary
 
 router = APIRouter(tags=["analytics"])
 
@@ -264,6 +265,20 @@ def write_notifications(body: NotificationSettingsUpdate, request: Request, admi
     audit(db, request, admin, "settings.notifications", **logged)
     db.commit()
     return _notification_out(cfg)
+
+
+@router.post("/api/settings/notifications/summary", response_model=NotificationTestResult)
+def send_summary_now(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Send the daily summary right away (to preview it). Doesn't change when the next one goes out."""
+    cfg = get_settings(db, "notifications")
+    if not cfg["topic"]:
+        return NotificationTestResult(ok=False, error="set a topic first")
+    msg = build_summary(db, problems=watchdog.status())
+    try:
+        notifier_send(cfg, msg)
+    except httpx.HTTPError as exc:
+        return NotificationTestResult(ok=False, error=str(exc)[:300])
+    return NotificationTestResult(ok=True)
 
 
 @router.post("/api/settings/notifications/test", response_model=NotificationTestResult)

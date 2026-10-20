@@ -285,6 +285,8 @@ class NotificationSettingsOut(BaseModel):
     include_snapshot: bool
     dashboard_url: str
     cooldown_seconds: int
+    daily_summary: bool
+    summary_time: str
     has_token: bool  # the token itself is never returned
 
 
@@ -298,6 +300,8 @@ class NotificationSettingsUpdate(BaseModel):
     dashboard_url: str | None = Field(default=None, pattern=r"^(https?://[^\s]+)?$", max_length=300)
     cooldown_seconds: int | None = Field(default=None, ge=0, le=86400)
     token: str | None = Field(default=None, max_length=300)  # "" clears it
+    daily_summary: bool | None = None
+    summary_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 class ArmingOut(BaseModel):

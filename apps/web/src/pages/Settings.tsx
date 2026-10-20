@@ -153,6 +153,7 @@ function Notifications() {
     onSuccess: (data) => { qc.setQueryData(["notifications"], data); setToken(""); },
   });
   const test = useMutation({ mutationFn: api.testNotification });
+  const summary = useMutation({ mutationFn: api.sendSummary });
   if (!form) return <Card title="Phone notifications"><p className="p-4 text-sm text-muted">Loading…</p></Card>;
   const set = <K extends keyof NotificationUpdate>(k: K, v: NotificationUpdate[K]) => setForm({ ...form, [k]: v });
   const publicServer = (form.server ?? "").includes("ntfy.sh");
@@ -217,7 +218,21 @@ function Notifications() {
             )}
           </span>
         </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={!!form.daily_summary} onChange={(e) => set("daily_summary", e.target.checked)} />
+            Daily summary at
+          </label>
+          <input className={`${inputCls} w-28`} type="time" aria-label="Daily summary time" value={form.summary_time ?? "08:00"}
+                 disabled={!form.daily_summary} onChange={(e) => set("summary_time", e.target.value)} />
+          <span className="text-xs text-muted">alerts, entries/exits and camera health for the last 24 h</span>
+        </div>
         {save.error && <ErrorNote error={save.error} />}
+        {summary.data && (
+          <p role="status" className={summary.data.ok ? "text-ok" : "text-bad"}>
+            {summary.data.ok ? "Summary sent. Check your phone." : `Couldn't send: ${summary.data.error}`}
+          </p>
+        )}
         {test.data && (
           <p role="status" className={test.data.ok ? "text-ok" : "text-bad"}>
             {test.data.ok ? "Test sent. Check your phone." : `Test failed: ${test.data.error}`}
@@ -227,6 +242,9 @@ function Notifications() {
           <Button type="submit" variant="primary" disabled={save.isPending}>Save</Button>
           <Button onClick={() => test.mutate()} disabled={test.isPending || !current.data?.topic}>
             {test.isPending ? "Sending…" : "Send test"}
+          </Button>
+          <Button onClick={() => summary.mutate()} disabled={summary.isPending || !current.data?.topic}>
+            {summary.isPending ? "Sending…" : "Send summary now"}
           </Button>
         </div>
       </form>

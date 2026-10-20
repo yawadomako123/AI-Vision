@@ -31,6 +31,9 @@ DEFAULTS = {
         "dashboard_url": "",  # e.g. a Tailscale URL, used as the tap-through link
         "token_encrypted": None,  # optional access token for a protected server
         "cooldown_seconds": 60,
+        "daily_summary": True,  # one message a day about the last 24 h (only when notifications are on)
+        "summary_time": "08:00",  # local time on the edge box
+        "summary_last_sent": None,  # local date, so a restart never sends it twice
     },
 }
 

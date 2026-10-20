@@ -229,6 +229,8 @@ export interface NotificationSettings {
   include_snapshot: boolean;
   dashboard_url: string;
   cooldown_seconds: number;
+  daily_summary: boolean;
+  summary_time: string;
   has_token: boolean;
 }
 
@@ -360,6 +362,8 @@ export const api = {
   notifications: () => request<NotificationSettings>("/api/settings/notifications"),
   updateNotifications: (body: NotificationUpdate) =>
     request<NotificationSettings>("/api/settings/notifications", { method: "PATCH", body: JSON.stringify(body) }),
+  sendSummary: () =>
+    request<{ ok: boolean; error: string | null }>("/api/settings/notifications/summary", { method: "POST" }),
   testNotification: () =>
     request<{ ok: boolean; error: string | null }>("/api/settings/notifications/test", { method: "POST" }),
 };

@@ -27,6 +27,8 @@ from app.db import SessionLocal, get_db
 from app.live import hub, worker_contact
 from app.settings_store import get_settings
 from app.watchdog import watchdog
+from app import daily_summary
+from app.notifier import notifier
 from app.models import User
 from app.retention import run_retention
 from app.routes import analytics, auth, cameras, events, internal, rules, sightings, users
@@ -53,7 +55,8 @@ async def _retention_loop() -> None:
 def _watchdog_once() -> None:
     with SessionLocal() as db:
         cfg = get_settings(db, "notifications")
-    watchdog.check(settings.event_storage_path, worker_contact.get("at"), cfg)
+        watchdog.check(settings.event_storage_path, worker_contact.get("at"), cfg)
+        daily_summary.maybe_send(db, notifier, watchdog.status())
 
 
 async def _watchdog_loop() -> None:
