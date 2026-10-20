@@ -178,7 +178,9 @@ To open the dashboard on your phone from anywhere, without opening ports to the 
 2. On the laptop, run `tailscale serve --bg 8000`. It prints an HTTPS address like `https://my-laptop.tail1234.ts.net`.
 3. Open that address on your phone. Optionally, paste it as the **Dashboard link** in Settings → Phone notifications, so tapping an alert opens it.
 
-Only devices signed in to your Tailscale account can reach it. The API notices HTTPS and marks the login cookie `Secure` automatically. Over Tailscale everything works except **Live view**: the video stream server isn't exposed, so watch live video on the local network.
+4. **Install it as an app:** in Chrome on Android, open the menu and choose **Add to Home screen** (or **Install app**). On iPhone, use Safari: **Share → Add to Home Screen**. It then opens full screen like a normal app, with a bottom tab bar (Overview, Live, Events, Search, More). Installing needs the HTTPS address from step 2.
+
+Only devices signed in to your Tailscale account can reach it. The API notices HTTPS and marks the login cookie `Secure` automatically. Over Tailscale the **Live** wall shows each camera as a picture refreshed every second, with detection boxes. Smooth video needs the local network, because the video stream server isn't exposed.
 
 ## Running a pilot
 

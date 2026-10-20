@@ -386,7 +386,7 @@ export default function Settings() {
   return (
     <div className="flex flex-col gap-5">
       <h1 className="text-xl font-semibold">Settings</h1>
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2">
         <Health />
         <Retention />
         <Performance />

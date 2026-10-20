@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { NavLink, Navigate, Route, Routes } from "react-router";
+import { useEffect, useState } from "react";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router";
 
 import { api } from "./api";
 import { useAuth } from "./auth";
@@ -26,9 +27,62 @@ function LiveIndicator() {
   );
 }
 
-function Nav() {
+function useUnreviewed() {
   const summary = useQuery({ queryKey: ["summary"], queryFn: () => api.summary(24) });
-  const unreviewed = summary.data?.unreviewed ?? 0;
+  return summary.data?.unreviewed ?? 0;
+}
+
+function Badge({ n }: { n: number }) {
+  if (n <= 0) return null;
+  return (
+    <span className="tabular rounded-full bg-accent px-1.5 text-xs text-white" aria-label={`${n} unreviewed`}>
+      {n > 99 ? "99+" : n}
+    </span>
+  );
+}
+
+/** Phone: tab bar at the bottom (thumb reach). The less-used pages sit under More. */
+function BottomNav() {
+  const unreviewed = useUnreviewed();
+  const { logout } = useAuth();
+  const [more, setMore] = useState(false);
+  const location = useLocation();
+  useEffect(() => setMore(false), [location.pathname]);
+  const tab = ({ isActive }: { isActive: boolean }) =>
+    `relative flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium ${isActive ? "text-accent" : "text-muted"}`;
+  const moreActive = ["/cameras", "/analytics", "/settings"].some((p) => location.pathname.startsWith(p));
+  return (
+    <>
+      {more && (
+        <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMore(false)}>
+          <nav aria-label="More" onClick={(e) => e.stopPropagation()}
+               className="absolute inset-x-3 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] flex flex-col rounded-xl border border-line bg-surface p-2 shadow-lg">
+            {[["/cameras", "Cameras"], ["/analytics", "Analytics"], ["/settings", "Settings"]].map(([to, label]) => (
+              <NavLink key={to} to={to} className="rounded-lg px-4 py-3 text-base font-medium hover:bg-surface-2">{label}</NavLink>
+            ))}
+            <button type="button" onClick={logout} className="rounded-lg px-4 py-3 text-left text-base text-muted hover:bg-surface-2">Sign out</button>
+          </nav>
+        </div>
+      )}
+      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
+        <NavLink to="/" end className={tab}><span aria-hidden className="text-lg leading-6">⌂</span>Overview</NavLink>
+        <NavLink to="/live" className={tab}><span aria-hidden className="text-lg leading-6">▦</span>Live</NavLink>
+        <NavLink to="/events" className={tab}>
+          <span aria-hidden className="text-lg leading-6">⚑</span>Events
+          {unreviewed > 0 && <span className="absolute top-1 left-1/2 ml-2"><Badge n={unreviewed} /></span>}
+        </NavLink>
+        <NavLink to="/search" className={tab}><span aria-hidden className="text-lg leading-6">⌕</span>Search</NavLink>
+        <button type="button" aria-expanded={more} onClick={() => setMore((v) => !v)}
+                className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium ${more || moreActive ? "text-accent" : "text-muted"}`}>
+          <span aria-hidden className="text-lg leading-6">⋯</span>More
+        </button>
+      </nav>
+    </>
+  );
+}
+
+function Nav() {
+  const unreviewed = useUnreviewed();
   const link = ({ isActive }: { isActive: boolean }) =>
     `flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium ${
       isActive ? "bg-accent/12 text-accent" : "text-muted hover:bg-surface-2 hover:text-text"
@@ -39,11 +93,7 @@ function Nav() {
       <NavLink to="/live" className={link}>Live</NavLink>
       <NavLink to="/events" className={link}>
         Events
-        {unreviewed > 0 && (
-          <span className="tabular rounded-full bg-accent px-1.5 text-xs text-white" aria-label={`${unreviewed} unreviewed`}>
-            {unreviewed > 99 ? "99+" : unreviewed}
-          </span>
-        )}
+        <Badge n={unreviewed} />
       </NavLink>
       <NavLink to="/search" className={link}>Search</NavLink>
       <NavLink to="/cameras" className={link}>Cameras</NavLink>
@@ -53,7 +103,7 @@ function Nav() {
   );
 }
 
-function ArmSwitch() {
+function ArmSwitch({ compact = false }: { compact?: boolean }) {
   const qc = useQueryClient();
   const arming = useQuery({ queryKey: ["arming"], queryFn: api.arming });
   const set = useMutation({
@@ -70,7 +120,7 @@ function ArmSwitch() {
       disabled={set.isPending}
       aria-pressed={armed}
       title={`${armed ? "Armed" : "Disarmed"}${who}. Click to ${armed ? "disarm (rules stop alerting)" : "arm"}.`}
-      className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${
+      className={`flex items-center justify-between gap-2 rounded-lg border font-semibold ${compact ? "px-2.5 py-1 text-xs" : "px-3 py-2 text-sm"} ${
         armed ? "border-ok/40 bg-ok/10 text-ok" : "border-warn/50 bg-warn/10 text-warn"
       }`}
     >
@@ -78,7 +128,7 @@ function ArmSwitch() {
         <span aria-hidden>{armed ? "🛡️" : "⏸"}</span>
         {armed ? "Armed" : "Disarmed"}
       </span>
-      <span className="text-xs font-medium opacity-80">{armed ? "Disarm" : "Arm"}</span>
+      {!compact && <span className="text-xs font-medium opacity-80">{armed ? "Disarm" : "Arm"}</span>}
     </button>
   );
 }
@@ -110,19 +160,23 @@ function UserMenu() {
 export default function App() {
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[13rem_1fr]">
-      <aside className="sticky top-0 z-10 flex flex-col gap-4 border-b border-line bg-surface px-4 py-3 md:h-dvh md:border-r md:border-b-0 md:py-5">
+      <aside className="sticky top-0 z-20 flex flex-col gap-4 border-b border-line bg-surface px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 md:h-dvh md:border-r md:border-b-0 md:py-5">
         <div className="flex items-center justify-between gap-2 md:flex-col md:items-start">
           <span className="flex items-center gap-2 font-semibold">
             <img src="/favicon.svg" alt="" className="size-6" />
             AI Vision Edge
           </span>
-          <LiveIndicator />
+          <span className="flex items-center gap-2">
+            <LiveIndicator />
+            <span className="md:hidden"><ArmSwitch compact /></span>
+          </span>
         </div>
-        <ArmSwitch />
-        <div className="overflow-x-auto"><Nav /></div>
-        <UserMenu />
+        <div className="hidden md:block"><ArmSwitch /></div>
+        <div className="hidden md:block"><Nav /></div>
+        <div className="hidden md:mt-auto md:block"><UserMenu /></div>
       </aside>
-      <main className="mx-auto w-full max-w-7xl px-4 py-5 md:px-8 md:py-7">
+      <BottomNav />
+      <main className="mx-auto w-full max-w-7xl px-4 pt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-8 md:py-7">
         <DisarmedBanner />
         <Routes>
           <Route path="/" element={<Overview />} />

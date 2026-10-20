@@ -9,6 +9,7 @@ Docs at http://127.0.0.1:8000/docs
 import asyncio
 import json
 import logging
+import mimetypes
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
@@ -125,6 +126,10 @@ async def live_updates(ws: WebSocket, db: Session = Depends(get_db)):
         pass
     finally:
         hub.disconnect(ws)
+
+
+# Windows' MIME registry doesn't know the web app manifest type.
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 class SPAStaticFiles(StaticFiles):
