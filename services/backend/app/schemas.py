@@ -121,6 +121,7 @@ class EventOut(BaseModel):
     note: str | None
     reviewed_by: str | None
     reviewed_at: datetime | None
+    received_at: datetime | None = None  # when the API stored it (minus occurred_at = alert delay)
 
 
 class EventUpdate(BaseModel):

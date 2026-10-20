@@ -130,6 +130,21 @@ class Notifier:
             log.warning("notification queue full; dropping notification for event %s", event["id"])
             return False
 
+    def notify_system(self, cfg: dict, title: str, message: str, priority: int = 4,
+                      tags: list[str] | None = None) -> bool:
+        """System health messages (worker down, disk full): sent whenever notifications are on,
+        whatever the minimum severity, because nothing else will tell the owner."""
+        if not cfg.get("enabled") or not cfg.get("topic"):
+            return False
+        msg = {"title": title, "message": message, "priority": priority, "tags": tags or ["warning"]}
+        if cfg.get("dashboard_url"):
+            msg["click"] = f"{cfg['dashboard_url'].rstrip('/')}/settings"
+        try:
+            self._queue.put_nowait((cfg, msg, None))
+            return True
+        except queue.Full:
+            return False
+
     def _run(self) -> None:
         while True:
             cfg, msg, snapshot = self._queue.get()

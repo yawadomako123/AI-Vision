@@ -22,4 +22,5 @@ def event_out(e: Event) -> EventOut:
     out.camera_name = e.camera.name if e.camera else None
     out.snapshot_url = f"/media/events/{e.snapshot_path}" if e.snapshot_path else None
     out.clip_url = f"/media/events/{e.clip_path}" if e.clip_path else None
+    out.received_at = e.created_at
     return out

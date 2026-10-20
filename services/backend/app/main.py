@@ -23,13 +23,16 @@ from app.config import REPO_ROOT, settings
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
-from app.live import hub
+from app.live import hub, worker_contact
+from app.settings_store import get_settings
+from app.watchdog import watchdog
 from app.models import User
 from app.retention import run_retention
 from app.routes import analytics, auth, cameras, events, internal, rules, sightings, users
 
 log = logging.getLogger(__name__)
 RETENTION_INTERVAL_SECONDS = 3600
+WATCHDOG_INTERVAL_SECONDS = 30
 
 
 def _retention_once() -> None:
@@ -46,11 +49,27 @@ async def _retention_loop() -> None:
         await asyncio.sleep(RETENTION_INTERVAL_SECONDS)
 
 
+def _watchdog_once() -> None:
+    with SessionLocal() as db:
+        cfg = get_settings(db, "notifications")
+    watchdog.check(settings.event_storage_path, worker_contact.get("at"), cfg)
+
+
+async def _watchdog_loop() -> None:
+    while True:
+        await asyncio.sleep(WATCHDOG_INTERVAL_SECONDS)
+        try:
+            await run_in_threadpool(_watchdog_once)
+        except Exception:  # noqa: BLE001
+            log.exception("watchdog check failed")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    task = asyncio.create_task(_retention_loop()) if settings.run_retention else None
+    tasks = [asyncio.create_task(_retention_loop()), asyncio.create_task(_watchdog_loop())] \
+        if settings.run_retention else []
     yield
-    if task:
+    for task in tasks:
         task.cancel()
 
 

@@ -239,6 +239,7 @@ export interface SystemHealth {
   worker: { last_contact: string | null; connected: boolean };
   storage: { snapshots: number; snapshot_bytes: number; disk_free_bytes: number; disk_total_bytes: number };
   events_total: number;
+  problems: { key: string; title: string; message: string }[];
 }
 
 export interface AuditEntry {

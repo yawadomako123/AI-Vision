@@ -28,6 +28,11 @@ function Health() {
   return (
     <Card title="System health">
       {sys.error && <div className="p-4"><ErrorNote error={sys.error} /></div>}
+      {s && s.problems.length > 0 && (
+        <ul className="flex flex-col gap-1 border-b border-line bg-bad/10 px-4 py-2.5 text-sm text-bad" role="alert">
+          {s.problems.map((p) => <li key={p.key}><strong>{p.title}.</strong> {p.message}</li>)}
+        </ul>
+      )}
       {s && (
         <div className="divide-y divide-line">
           <Row label="Database" ok={s.database === "ok"} value={s.database === "ok" ? "OK" : "Error"} />

@@ -125,6 +125,38 @@ Pick street-level cameras: in wide aerial shots people are only a few pixels tal
 .\scripts\test-stream.ps1 -Path cam2 -Clip samples\clip.mp4 # loop a recording as cam2
 ```
 
+## Running unattended (auto-restart)
+
+`scripts/supervise.ps1` runs everything without terminal windows and keeps it running:
+
+```powershell
+.\scripts\supervise.ps1              # start Docker services, the API and the worker; Ctrl+C stops all
+.\scripts\install-autostart.ps1      # start it automatically when you log in (no admin needed)
+.\scripts\install-autostart.ps1 -Remove
+```
+
+- **Crash recovery:** a crashed API or worker restarts within about 10 s. Repeated crashes back off up to 5 min.
+- **Hang detection:** restarts the API if `/health` stops answering, and the worker if its heartbeat file (`storage/worker.heartbeat`, refreshed every 5 s) goes stale for 2 min.
+- **Docker:** waits for Docker Desktop after login, then starts the database and MediaMTX. Turn on Docker Desktop's *Start when you sign in*.
+- **Logs:** `storage/logs/` (`supervisor.log`, `api*.log`, `worker*.log`; the previous run is kept as `*.prev.log`).
+- **Phone alerts when the system itself breaks:** with phone notifications on, you get a push when the vision worker stops reporting for 2 min or the disk drops below 2 GB / 5 % free, and another when it's fixed. Current problems also show at the top of **Settings → System health**.
+
+**Endurance test:** `scripts/soak-test.py` streams N looping fake cameras for as long as you like and writes a report to `storage/soak-*.md`. It records online %, frames analysed per camera, worker memory and CPU, restarts, and alert delay:
+
+```powershell
+cd services\backend
+uv run python ..\..\scripts\soak-test.py --cameras 4 --minutes 240
+```
+
+Measured on this laptop (i7-1185G7, Iris Xe, search on, 6 min each):
+
+| Cameras | Online | Frames analysed per camera | Worker RAM | Worker CPU | Alert delay (median / 95%) |
+|---|---|---|---|---|---|
+| 2 | 100 % | 2.9 /s | ~700 MB | ~6 % | – |
+| 4 | 100 % | 1.6 /s | ~870 MB (flat) | ~11 % | 0.24 s / 0.39 s |
+
+The integrated GPU manages about 6.5 detections a second in total, shared between cameras. 1.6 /s per camera still catches people walking through, but for 4+ cameras at the full 3 /s use a faster GPU or set **Analysis speed** to 2.
+
 ## Phone notifications (ntfy, free)
 
 1. Install the free **ntfy** app on your phone.

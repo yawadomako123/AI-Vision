@@ -23,6 +23,7 @@ from app.schemas import (
     ArmingIn, ArmingOut, NotificationSettingsOut, NotificationSettingsUpdate, NotificationTestResult, SettingsOut, SettingsUpdate,
 )
 from app.settings_store import get_settings, update_settings
+from app.watchdog import watchdog
 
 router = APIRouter(tags=["analytics"])
 
@@ -308,4 +309,5 @@ def system(_: User = Depends(current_user), db: Session = Depends(get_db)):
         "storage": {"snapshots": files, "snapshot_bytes": size, "disk_free_bytes": disk.free,
                     "disk_total_bytes": disk.total},
         "events_total": db.scalar(select(func.count()).select_from(Event)) or 0,
+        "problems": watchdog.status(),
     }

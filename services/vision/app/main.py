@@ -14,6 +14,7 @@ only detects and tracks: useful for benchmarks and quick tests on a video file.
 """
 
 import argparse
+import warnings
 import json
 import logging
 import time
@@ -25,7 +26,7 @@ import supervision as sv
 
 from app.api_client import ApiClient
 from app.clips import ClipConfig, ClipRecorder
-from app.config import settings
+from app.config import REPO_ROOT, settings
 from app.detector import COCO_CLASSES, Detector
 from app.event_publisher import EventPublisher
 from app.frame_reader import FrameReader
@@ -36,6 +37,9 @@ from app.rule_engine import Rule, RuleEngine, RuleHit, object_positions
 from app.sightings import SightingCollector, SiglipEmbedder
 
 log = logging.getLogger("vision")
+# supervision is pinned below 0.31 (pyproject.toml), where ByteTrack still exists; its
+# deprecation notice is just noise in the logs until we move to the `trackers` package.
+warnings.filterwarnings("ignore", message=".*ByteTrack.*deprecated", category=FutureWarning)
 STATUS_REPORT_SECONDS = 5.0
 RULES_REFRESH_SECONDS = 3.0
 
@@ -162,7 +166,9 @@ def main() -> None:
 
     box_annotator = sv.BoxAnnotator()
     label_annotator = sv.LabelAnnotator(text_scale=0.5)
-    next_rules_check = next_camera_sync = next_status_report = 0.0
+    next_rules_check = next_camera_sync = next_status_report = next_heartbeat = 0.0
+    # scripts/supervise.ps1 restarts the worker if this file stops being refreshed (a hang).
+    heartbeat = REPO_ROOT / "storage" / "worker.heartbeat"
 
     try:
         while True:
@@ -174,6 +180,12 @@ def main() -> None:
                 next_rules_check = now + RULES_REFRESH_SECONDS
                 if api and fetch_api_rules():
                     apply_rules()
+            if now >= next_heartbeat:
+                next_heartbeat = now + 5
+                try:
+                    heartbeat.write_text(str(time.time()), encoding="ascii")
+                except OSError:
+                    pass
             if api and now >= next_status_report:
                 next_status_report = now + STATUS_REPORT_SECONDS
                 for cam in cameras.values():
