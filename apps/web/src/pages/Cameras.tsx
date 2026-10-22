@@ -75,7 +75,7 @@ function CameraCard({ camera, onEdit }: { camera: Camera; onEdit: () => void }) 
   const { isAdmin } = useAuth();
   const [showLive, setShowLive] = useState(false);
   const [test, setTest] = useState<CameraTestResult | null>(null);
-  const live = liveViewUrl(camera.stream_url_masked);
+  const live = liveViewUrl(camera.stream_url_masked, camera.live_path);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["cameras"] });
   const toggle = useMutation({ mutationFn: () => api.updateCamera(camera.id, { enabled: !camera.enabled }), onSuccess: invalidate });
@@ -128,6 +128,12 @@ function CameraCard({ camera, onEdit }: { camera: Camera; onEdit: () => void }) 
                 className="inline-flex items-center rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium hover:bg-surface-2">
             Rules
           </Link>
+          {camera.live_path && (
+            <Link to={`/playback?camera=${camera.id}`}
+                  className="inline-flex items-center rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium hover:bg-surface-2">
+              Recordings
+            </Link>
+          )}
           <Button onClick={() => runTest.mutate()} disabled={runTest.isPending}>{runTest.isPending ? "Testing…" : "Test"}</Button>
           {!mutedUntil && (
             <Button onClick={() => mute.mutate(60)} disabled={mute.isPending} title="Silence phone notifications from this camera for 1 hour">

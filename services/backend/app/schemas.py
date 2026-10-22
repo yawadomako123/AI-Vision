@@ -62,6 +62,8 @@ class CameraOut(BaseModel):
     infer_fps: float | None
     created_at: datetime
     notify_muted_until: datetime | None = None
+    # MediaMTX path carrying this camera (live WebRTC video and recordings); None = not via MediaMTX.
+    live_path: str | None = None
 
 
 class CameraMuteIn(BaseModel):
@@ -270,6 +272,9 @@ class SettingsOut(BaseModel):
     detection_sensitivity: Literal["high", "balanced", "low"]
     motion_skip: bool
     tamper_alerts: bool
+    recording_enabled: bool
+    recording_days: int
+    recording_max_gb: int
 
 
 class SettingsUpdate(BaseModel):
@@ -284,6 +289,9 @@ class SettingsUpdate(BaseModel):
     detection_sensitivity: Literal["high", "balanced", "low"] | None = None
     motion_skip: bool | None = None
     tamper_alerts: bool | None = None
+    recording_enabled: bool | None = None
+    recording_days: int | None = Field(default=None, ge=1, le=90)
+    recording_max_gb: int | None = Field(default=None, ge=1, le=100_000)
 
 
 HTTP_URL = r"^https?://[^\s/$.?#][^\s]*$"

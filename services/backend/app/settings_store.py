@@ -22,6 +22,11 @@ DEFAULTS = {
         "motion_skip": True,
         # Alert when a camera is covered, blacked out, smeared/out of focus, or moved.
         "tamper_alerts": True,
+        # Continuous recording through MediaMTX (no re-encoding). The size cap always wins, and
+        # at least 5 GB of disk is kept free.
+        "recording_enabled": True,
+        "recording_days": 7,
+        "recording_max_gb": 20,
     },
     "system": {
         "armed": True,

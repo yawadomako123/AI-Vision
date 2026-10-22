@@ -42,6 +42,7 @@ function Health() {
           <Row label="Disk free" ok={s.storage.disk_free_bytes > 5 * 1024 ** 3}
                value={`${bytes(s.storage.disk_free_bytes)} of ${bytes(s.storage.disk_total_bytes)}`} />
           <Row label="Events in database" value={String(s.events_total)} />
+          <Row label="Recordings" value={bytes(s.recordings_bytes)} />
         </div>
       )}
     </Card>
@@ -151,6 +152,50 @@ function Performance() {
         </label>
         {save.error && <ErrorNote error={save.error} />}
       </fieldset>
+    </Card>
+  );
+}
+
+function Recording() {
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const [form, setForm] = useState<Pick<AppSettings, "recording_days" | "recording_max_gb"> | null>(null);
+  useEffect(() => { if (settings.data) setForm({ recording_days: settings.data.recording_days, recording_max_gb: settings.data.recording_max_gb }); }, [settings.data]);
+  const save = useMutation({
+    mutationFn: (body: Partial<AppSettings>) => api.updateSettings(body),
+    onSuccess: (data) => qc.setQueryData(["settings"], data),
+  });
+  const s = settings.data;
+  if (!s || !form) return <Card title="Recording"><p className="p-4 text-sm text-muted">Loading…</p></Card>;
+  return (
+    <Card title="Recording">
+      <form className="flex flex-col gap-3 p-4 text-sm" onSubmit={(e) => { e.preventDefault(); save.mutate(form); }}>
+        <fieldset disabled={!isAdmin} className="contents">
+          <label className="flex items-start gap-2">
+            <input type="checkbox" className="mt-0.5" checked={s.recording_enabled} onChange={(e) => save.mutate({ recording_enabled: e.target.checked })} />
+            <span>
+              Record all cameras continuously
+              <span className="block text-xs text-muted">Saved as received, without re-encoding (almost no CPU). Watch it in Playback. About 5–10 GB per camera per day at 640×480.</span>
+            </span>
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted">Keep recordings (days)</span>
+              <input className={inputCls} type="number" min={1} max={90} value={form.recording_days}
+                     onChange={(e) => setForm({ ...form, recording_days: Number(e.target.value) })} />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted">Storage limit (GB, oldest deleted first)</span>
+              <input className={inputCls} type="number" min={1} max={100000} value={form.recording_max_gb}
+                     onChange={(e) => setForm({ ...form, recording_max_gb: Number(e.target.value) })} />
+            </label>
+          </div>
+          <p className="text-xs text-muted">Whichever limit is reached first applies, and at least 5 GB of disk is always kept free.</p>
+        </fieldset>
+        {save.error && <ErrorNote error={save.error} />}
+        {isAdmin && <div><Button type="submit" variant="primary" disabled={save.isPending}>Save</Button></div>}
+      </form>
     </Card>
   );
 }
@@ -431,6 +476,7 @@ export default function Settings() {
         <Health />
         <Retention />
         <Performance />
+        <Recording />
       </div>
       {isAdmin && <Notifications />}
       <ChangePassword />

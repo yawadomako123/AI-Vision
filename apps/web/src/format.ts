@@ -49,7 +49,9 @@ export function timeAgo(iso: string | null, now = Date.now()): string {
 }
 
 /** Browser live view for streams that go through the local MediaMTX (RTSP :8554 -> WebRTC :8889). */
-export function liveViewUrl(maskedStreamUrl: string): string | null {
+export function liveViewUrl(maskedStreamUrl: string, livePath?: string | null): string | null {
+  // IP cameras are proxied through MediaMTX (as aiv<id>), so they have live video too.
+  if (livePath) return `${location.protocol}//${location.hostname}:8889/${livePath}`;
   try {
     const url = new URL(maskedStreamUrl);
     // "mediamtx" is the service name when everything runs in Docker Compose.

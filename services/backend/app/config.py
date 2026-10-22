@@ -37,10 +37,17 @@ class Settings(BaseSettings):
     session_hours: int = 12
     # Set true when the dashboard is served over HTTPS (remote access).
     cookie_secure: bool = False
+    # MediaMTX control API + playback server (recording, IP-camera proxies). Empty password = off.
+    mediamtx_api_password: str = ""
+    mediamtx_api_url: str = "http://127.0.0.1:9997"
+    mediamtx_playback_url: str = "http://127.0.0.1:9996"
+    # How the vision worker reaches MediaMTX's RTSP server ("mediamtx:8554" inside Docker).
+    mediamtx_rtsp: str = "127.0.0.1:8554"
+    recordings_path: Path = REPO_ROOT / "storage" / "recordings"
     # Dashboard origins allowed to call the API from the browser.
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
-    @field_validator("event_storage_path", "search_model_dir")
+    @field_validator("event_storage_path", "search_model_dir", "recordings_path")
     @classmethod
     def _repo_relative(cls, p: Path) -> Path:
         return p if p.is_absolute() else REPO_ROOT / p

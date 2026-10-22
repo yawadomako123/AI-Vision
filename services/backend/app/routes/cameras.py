@@ -5,12 +5,13 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 import av
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import discovery
+from app.recording import camera_path, delete_recordings, sync_recording
 from app.audit import audit
 from app.auth import current_user, require_admin
 from app.crypto import decrypt, encrypt, mask_url
@@ -67,8 +68,8 @@ def list_cameras(_: User = Depends(current_user), db: Session = Depends(get_db))
 
 
 @router.post("", response_model=CameraOut, status_code=status.HTTP_201_CREATED)
-def create_camera(body: CameraCreate, request: Request, admin: User = Depends(require_admin),
-                  db: Session = Depends(get_db)):
+def create_camera(body: CameraCreate, request: Request, background: BackgroundTasks,
+                  admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     camera = Camera(
         name=body.name, location=body.location, enabled=body.enabled,
         stream_url_encrypted=encrypt(body.stream_url),
@@ -78,6 +79,7 @@ def create_camera(body: CameraCreate, request: Request, admin: User = Depends(re
     _commit(db)
     out = camera_out(camera)
     hub.broadcast_from_sync("camera", out.model_dump())
+    background.add_task(sync_recording)  # set up its MediaMTX proxy/recording now, not in 30 s
     return out
 
 
@@ -87,8 +89,8 @@ def get_camera(camera_id: int, _: User = Depends(current_user), db: Session = De
 
 
 @router.patch("/{camera_id}", response_model=CameraOut)
-def update_camera(camera_id: int, body: CameraUpdate, request: Request, admin: User = Depends(require_admin),
-                  db: Session = Depends(get_db)):
+def update_camera(camera_id: int, body: CameraUpdate, request: Request, background: BackgroundTasks,
+                  admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     camera = _get(db, camera_id)
     changes = body.model_dump(exclude_unset=True)
     logged = {k: v for k, v in changes.items() if k != "stream_url"}
@@ -102,17 +104,24 @@ def update_camera(camera_id: int, body: CameraUpdate, request: Request, admin: U
     _commit(db)
     out = camera_out(camera)
     hub.broadcast_from_sync("camera", out.model_dump())
+    background.add_task(sync_recording)
     return out
 
 
 @router.delete("/{camera_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_camera(camera_id: int, request: Request, admin: User = Depends(require_admin),
-                  db: Session = Depends(get_db)):
+def delete_camera(camera_id: int, request: Request, background: BackgroundTasks,
+                  admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     camera = _get(db, camera_id)
+    cp = camera_path(camera.id, decrypt(camera.stream_url_encrypted))
     audit(db, request, admin, "camera.delete", f"camera:{camera.name}")
     db.delete(camera)
     db.commit()
     hub.broadcast_from_sync("camera_deleted", {"id": camera_id})
+    background.add_task(sync_recording)
+    # Its recordings go with it, unless another camera still uses the same MediaMTX path.
+    others = {camera_path(c.id, decrypt(c.stream_url_encrypted)) for c in db.scalars(select(Camera))}
+    if cp is not None and cp.name not in {o.name for o in others if o}:
+        background.add_task(delete_recordings, cp.name)
 
 
 def _redact(exc: Exception, url: str) -> str:

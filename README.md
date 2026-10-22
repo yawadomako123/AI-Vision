@@ -56,6 +56,10 @@ Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard 
 
 **Counting accuracy:** extra boxes on the same person (for example one for the whole body and one for the head) are removed automatically. **Settings → Performance → Detection sensitivity** sets how sure the model must be: *High* catches more in poor light but adds false or doubled boxes, *Balanced* is the default, and *Low* only counts very clear people and vehicles. It applies live.
 
+**Recording and Playback:** every camera is recorded continuously by MediaMTX, exactly as received (no re-encoding, almost no CPU), into `storage\recordings`. **Playback** shows a 24-hour bar per camera and day: shaded where something was recorded, with alerts marked in colour. Click anywhere to watch from that moment, or use **Watch recording** on any event or search result. **Settings → Recording** sets how many days to keep (default 7) and a storage limit (default 20 GB, oldest deleted first); at least 5 GB of disk is always kept free. Expect roughly 5–10 GB per camera per day at 640×480.
+
+IP cameras are routed through MediaMTX automatically, so the camera serves one connection that the worker, the live video and the recorder share; every camera now has smooth live video in Live.
+
 **Privacy masks:** in a camera's rules, *More rule types → Privacy mask* blacks out an area (a neighbour's window, a public street). It's blanked the moment each frame arrives, so it's never analysed and never appears in snapshots, alert clips, search images or the Live page; masks stay on while disarmed. The camera's own stream isn't changed, so check what the camera itself records if it has an SD card.
 
 **Tamper alerts:** each camera learns its normal view and raises a high-severity *Camera tampering* alert (with a snapshot) when it's covered or blacked out, smeared or out of focus, or moved/turned away for 10 s, and a *back to normal* event afterwards. A camera deliberately re-aimed is accepted as the new normal after 5 minutes. Switching the lights off in a room looks the same as covering the lens, so it's reported as "too dark". On by default (Settings → Performance).

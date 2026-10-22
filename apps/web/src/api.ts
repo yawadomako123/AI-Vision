@@ -13,6 +13,7 @@ export interface Camera {
   infer_fps: number | null;
   created_at: string;
   notify_muted_until: string | null; // phone notifications silenced until then
+  live_path: string | null; // MediaMTX path (live WebRTC video and recordings), null = not via MediaMTX
 }
 
 export interface CameraInput {
@@ -89,6 +90,7 @@ export interface EventFilters {
   status?: string;
   severity?: string;
   since?: string;
+  until?: string;
   limit?: number;
   offset?: number;
 }
@@ -224,6 +226,9 @@ export interface AppSettings {
   detection_sensitivity: "high" | "balanced" | "low";
   motion_skip: boolean;
   tamper_alerts: boolean;
+  recording_enabled: boolean;
+  recording_days: number;
+  recording_max_gb: number;
 }
 
 export interface NotificationSettings {
@@ -247,6 +252,7 @@ export interface SystemHealth {
   storage: { snapshots: number; snapshot_bytes: number; disk_free_bytes: number; disk_total_bytes: number };
   events_total: number;
   problems: { key: string; title: string; message: string }[];
+  recordings_bytes: number;
 }
 
 export interface AuditEntry {
@@ -311,6 +317,10 @@ export const api = {
       method: "POST", body: JSON.stringify({ onvif_url, username, password }) }),
   probeStream: (stream_url: string) =>
     request<CameraTestResult>("/api/cameras/probe", { method: "POST", body: JSON.stringify({ stream_url }) }),
+  recordings: (id: number, start: string, end: string) =>
+    request<{ path: string; segments: { start: string; end: string }[] }>(`/api/cameras/${id}/recordings${query({ start, end })}`),
+  playbackUrl: (id: number, start: string, duration: number) =>
+    `/api/cameras/${id}/playback${query({ start, duration })}`,
   muteCamera: (id: number, minutes: number) =>
     request<Camera>(`/api/cameras/${id}/mute`, { method: "PUT", body: JSON.stringify({ minutes }) }),
   testCamera: (id: number) => request<CameraTestResult>(`/api/cameras/${id}/test`, { method: "POST" }),

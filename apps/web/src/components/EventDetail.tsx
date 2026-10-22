@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
@@ -71,6 +72,10 @@ export function EventDetail({ event, onDone }: { event: VisionEvent; onDone: () 
             No snapshot for this event
           </div>
         )}
+        <Link to={`/playback?camera=${event.camera_id}&t=${new Date(new Date(event.occurred_at).getTime() - 10_000).toISOString()}`}
+              className="mt-2 mr-2 inline-flex text-xs font-medium text-accent">
+          Watch recording from 10 s before →
+        </Link>
         {event.clip_url && event.snapshot_url && (
           <div className="mt-2 flex gap-1 text-xs" role="group" aria-label="Evidence">
             {(["clip", "snapshot"] as const).map((v) => (

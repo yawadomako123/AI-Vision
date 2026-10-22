@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.responses import Response
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -25,6 +25,7 @@ from app.schemas import (
 from app.settings_store import get_settings, update_settings
 from app.watchdog import watchdog
 from app.daily_summary import build_summary
+from app.recording import recordings_size, sync_recording
 
 router = APIRouter(tags=["analytics"])
 
@@ -230,12 +231,14 @@ def read_settings(_: User = Depends(current_user), db: Session = Depends(get_db)
 
 
 @router.patch("/api/settings", response_model=SettingsOut)
-def write_settings(body: SettingsUpdate, request: Request, admin: User = Depends(require_admin),
-                   db: Session = Depends(get_db)):
+def write_settings(body: SettingsUpdate, request: Request, background: BackgroundTasks,
+                   admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     changes = body.model_dump(exclude_unset=True)
     result = update_settings(db, changes)
     audit(db, request, admin, "settings.update", **changes)
     db.commit()
+    if changes.keys() & {"recording_enabled", "recording_days", "recording_max_gb"}:
+        background.add_task(sync_recording)
     return result
 
 
@@ -325,4 +328,5 @@ def system(_: User = Depends(current_user), db: Session = Depends(get_db)):
                     "disk_total_bytes": disk.total},
         "events_total": db.scalar(select(func.count()).select_from(Event)) or 0,
         "problems": watchdog.status(),
+        "recordings_bytes": recordings_size(app_settings.recordings_path),
     }

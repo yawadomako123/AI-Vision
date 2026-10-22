@@ -70,7 +70,7 @@ function Tile({ camera, detections, alert, showBoxes, single }: {
   camera: Camera; detections: Detections | undefined; alert: string | null; showBoxes: boolean; single: boolean;
 }) {
   const tile = useRef<HTMLDivElement>(null);
-  const webrtc = liveViewUrl(camera.stream_url_masked);
+  const webrtc = liveViewUrl(camera.stream_url_masked, camera.live_path);
   // Privacy masks: the worker blacks these out in everything it saves; the raw WebRTC video
   // doesn't pass through the worker, so they're painted over it here.
   const rules = useQuery({ queryKey: ["rules", camera.id], queryFn: () => api.rules(camera.id), staleTime: 30_000 });

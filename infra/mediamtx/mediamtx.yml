@@ -28,29 +28,47 @@ hlsAddress: :8888
 rtmp: no
 srt: no
 moq: no
-api: no
+# Control API and playback server: used only by our API on this machine (compose binds both
+# ports to 127.0.0.1) with the "aivision" user below.
+api: yes
+apiAddress: :9997
+playback: yes
+playbackAddress: :9996
 
-# Anyone on the LAN can READ; only someone with the password can PUBLISH.
-# The real publish password is MEDIAMTX_PUBLISH_PASSWORD in .env: compose.yaml passes it in as
-# MTX_AUTHINTERNALUSERS_1_PASS, which replaces the placeholder below (so it never sits in git).
+# Recording: off by default; our API switches it on per camera (Settings > Recording) and sets
+# how long to keep it. fMP4 segments, no re-encoding. The API also enforces a total size cap.
+pathDefaults:
+  record: no
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordFormat: fmp4
+  recordSegmentDuration: 10m
+  recordDeleteAfter: 7d
+
+# Anyone on the LAN can READ live video; only someone with the password can PUBLISH.
+# Real passwords live in .env: compose.yaml passes MEDIAMTX_PUBLISH_PASSWORD as
+# MTX_AUTHINTERNALUSERS_1_PASS and MEDIAMTX_API_PASSWORD as MTX_AUTHINTERNALUSERS_2_PASS,
+# replacing the placeholders below (so they never sit in git).
 authInternalUsers:
   - user: any
     ips: []
     permissions:
       - action: read
-      - action: playback
   - user: publisher
     pass: set-MEDIAMTX_PUBLISH_PASSWORD-in-.env
     ips: []
     permissions:
       - action: publish
+  - user: aivision
+    pass: set-MEDIAMTX_API_PASSWORD-in-.env
+    ips: []
+    permissions:
+      - action: api
+      - action: playback
+      - action: read
 
 paths:
-  # Real IP cameras later: uncomment and MediaMTX will pull the camera once
-  # and fan it out to the vision worker and the dashboard.
-  # cam5:
-  #   source: rtsp://user:pass@192.168.1.50:554/stream2
-  #   sourceOnDemand: no
+  # IP cameras are added here automatically by our API (as aiv<camera id>, pulling the camera once
+  # and sharing it with the worker, the dashboard and the recorder). Nothing to edit by hand.
 
   # cam1..cam4 (and anything else) accept a publisher (phone or fake camera).
   all_others:

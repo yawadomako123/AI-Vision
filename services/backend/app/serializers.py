@@ -15,7 +15,17 @@ def camera_out(c: Camera) -> CameraOut:
         infer_fps=c.infer_fps,
         created_at=c.created_at,
         notify_muted_until=c.notify_muted_until,
+        live_path=_live_path(c),
     )
+
+
+def _live_path(c: Camera) -> str | None:
+    from app.recording import camera_path, mediamtx
+
+    cp = camera_path(c.id, decrypt(c.stream_url_encrypted))
+    if cp is None or (cp.proxied and not mediamtx.enabled):
+        return None
+    return cp.name
 
 
 def event_out(e: Event) -> EventOut:

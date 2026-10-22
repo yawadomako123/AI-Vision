@@ -9,6 +9,9 @@ os.environ["CAMERA_SECRET_KEY"] = Fernet.generate_key().decode()
 os.environ["SERVICE_TOKEN"] = "test-token"
 os.environ["RUN_RETENTION"] = "false"
 os.environ["EVENT_STORAGE_PATH"] = tempfile.mkdtemp(prefix="aiv-test-media-")
+# Never talk to the real MediaMTX from tests (camera changes would reconfigure it).
+os.environ["MEDIAMTX_API_PASSWORD"] = ""
+os.environ["RECORDINGS_PATH"] = tempfile.mkdtemp(prefix="aiv-test-recordings-")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

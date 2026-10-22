@@ -117,6 +117,7 @@ $secrets = [ordered]@{
     CAMERA_SECRET_KEY          = { New-Secret 32 -Fernet }
     SERVICE_TOKEN              = { New-Secret 32 }
     MEDIAMTX_PUBLISH_PASSWORD  = { New-Secret 12 -Simple }
+    MEDIAMTX_API_PASSWORD      = { New-Secret 24 -Simple }
 }
 foreach ($k in $secrets.Keys) {
     $v = Get-EnvValue $k

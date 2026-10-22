@@ -11,6 +11,7 @@ import Analytics from "./pages/Analytics";
 import Cameras from "./pages/Cameras";
 import Events from "./pages/Events";
 import Live from "./pages/Live";
+import Playback from "./pages/Playback";
 import Overview from "./pages/Overview";
 import RulesEditor from "./pages/RulesEditor";
 import Search from "./pages/Search";
@@ -50,14 +51,14 @@ function BottomNav() {
   useEffect(() => setMore(false), [location.pathname]);
   const tab = ({ isActive }: { isActive: boolean }) =>
     `relative flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium ${isActive ? "text-accent" : "text-muted"}`;
-  const moreActive = ["/cameras", "/analytics", "/settings"].some((p) => location.pathname.startsWith(p));
+  const moreActive = ["/playback", "/cameras", "/analytics", "/settings"].some((p) => location.pathname.startsWith(p));
   return (
     <>
       {more && (
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMore(false)}>
           <nav aria-label="More" onClick={(e) => e.stopPropagation()}
                className="absolute inset-x-3 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] flex flex-col rounded-xl border border-line bg-surface p-2 shadow-lg">
-            {[["/cameras", "Cameras"], ["/analytics", "Analytics"], ["/settings", "Settings"]].map(([to, label]) => (
+            {[["/playback", "Playback"], ["/cameras", "Cameras"], ["/analytics", "Analytics"], ["/settings", "Settings"]].map(([to, label]) => (
               <NavLink key={to} to={to} className="rounded-lg px-4 py-3 text-base font-medium hover:bg-surface-2">{label}</NavLink>
             ))}
             <button type="button" onClick={logout} className="rounded-lg px-4 py-3 text-left text-base text-muted hover:bg-surface-2">Sign out</button>
@@ -91,6 +92,7 @@ function Nav() {
     <nav aria-label="Main" className="flex gap-1 md:flex-col">
       <NavLink to="/" end className={link}>Overview</NavLink>
       <NavLink to="/live" className={link}>Live</NavLink>
+      <NavLink to="/playback" className={link}>Playback</NavLink>
       <NavLink to="/events" className={link}>
         Events
         <Badge n={unreviewed} />
@@ -181,6 +183,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Overview />} />
           <Route path="/live" element={<Live />} />
+          <Route path="/playback" element={<Playback />} />
           <Route path="/events" element={<Events />} />
           <Route path="/search" element={<Search />} />
           <Route path="/cameras" element={<Cameras />} />

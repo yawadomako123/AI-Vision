@@ -27,11 +27,12 @@ from app.db import SessionLocal, get_db
 from app.live import hub, worker_contact
 from app.settings_store import get_settings
 from app.watchdog import watchdog
+from app.recording import sync_recording
 from app import daily_summary
 from app.notifier import notifier
 from app.models import User
 from app.retention import run_retention
-from app.routes import actions, analytics, auth, cameras, events, internal, rules, sightings, users
+from app.routes import actions, analytics, auth, cameras, events, internal, recordings, rules, sightings, users
 
 log = logging.getLogger(__name__)
 RETENTION_INTERVAL_SECONDS = 3600
@@ -57,6 +58,7 @@ def _watchdog_once() -> None:
         cfg = get_settings(db, "notifications")
         watchdog.check(settings.event_storage_path, worker_contact.get("at"), cfg)
         daily_summary.maybe_send(db, notifier, watchdog.status())
+    sync_recording()  # also heals MediaMTX after a restart (it forgets API-added paths)
 
 
 async def _watchdog_loop() -> None:
@@ -86,7 +88,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for module in (auth, users, cameras, rules, events, analytics, sightings, internal, actions):
+for module in (auth, users, cameras, rules, events, analytics, sightings, internal, actions, recordings):
     app.include_router(module.router)
 
 settings.event_storage_path.mkdir(parents=True, exist_ok=True)

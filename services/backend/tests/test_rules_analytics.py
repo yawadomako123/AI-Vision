@@ -129,7 +129,8 @@ def test_settings(client):
         "event_retention_days": 30, "count_retention_days": 90,
         "clips_enabled": True, "clip_retention_days": 7, "clip_storage_mb": 1024, "sighting_retention_days": 14,
         "search_enabled": False, "analysis_fps": 3, "detection_sensitivity": "balanced",
-        "motion_skip": True, "tamper_alerts": True}
+        "motion_skip": True, "tamper_alerts": True,
+        "recording_enabled": True, "recording_days": 7, "recording_max_gb": 20}
     assert client.patch("/api/settings", json={"event_retention_days": 7}).json()["event_retention_days"] == 7
     assert client.patch("/api/settings", json={"event_retention_days": 0}).status_code == 422
 

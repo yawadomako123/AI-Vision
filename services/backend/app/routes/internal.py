@@ -14,6 +14,7 @@ from app.crypto import decrypt
 from app.db import get_db
 from app.live import hub, live_previews, worker_contact
 from app.notifier import notifier
+from app.recording import worker_url
 from app.settings_store import SENSITIVITY_CONFIDENCE, get_settings
 from app.models import Camera, CountSample, DetectionRule, Event, LineCount
 from app.schemas import (
@@ -34,7 +35,8 @@ router = APIRouter(prefix="/api/internal", tags=["internal"], dependencies=[Depe
 @router.get("/cameras", response_model=list[InternalCamera])
 def worker_cameras(db: Session = Depends(get_db)):
     return [
-        InternalCamera(id=c.id, name=c.name, stream_url=decrypt(c.stream_url_encrypted), enabled=c.enabled)
+        InternalCamera(id=c.id, name=c.name, stream_url=worker_url(c.id, decrypt(c.stream_url_encrypted)),
+                       enabled=c.enabled)
         for c in db.scalars(select(Camera).order_by(Camera.id))
     ]
 

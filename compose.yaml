@@ -10,15 +10,19 @@ services:
     restart: unless-stopped
     volumes:
       - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+      - ./storage/recordings:/recordings
     environment:
       # Overrides the placeholder in mediamtx.yml, so the real password lives only in .env.
       MTX_AUTHINTERNALUSERS_1_PASS: ${MEDIAMTX_PUBLISH_PASSWORD:?set MEDIAMTX_PUBLISH_PASSWORD in .env}
+      MTX_AUTHINTERNALUSERS_2_PASS: ${MEDIAMTX_API_PASSWORD:?set MEDIAMTX_API_PASSWORD in .env}
     ports:
       # RTSP is bound to all interfaces so phones/cameras on the LAN can publish.
       - "8554:8554"
       - "127.0.0.1:8888:8888"
       - "127.0.0.1:8889:8889"
       - "127.0.0.1:8189:8189/udp"
+      - "127.0.0.1:9996:9996"   # playback server (recordings), used by the API only
+      - "127.0.0.1:9997:9997"   # control API, used by the API only
 
   db:
     image: postgres:17-alpine

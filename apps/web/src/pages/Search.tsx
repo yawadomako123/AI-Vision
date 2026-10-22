@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 import { api, type Sighting } from "../api";
 import { ClipPlayer } from "../components/EventDetail";
@@ -75,6 +75,10 @@ function SightingDialog({ id, hours, onOpen }: { id: number; hours: number; onOp
             <dt className="text-muted">In view</dt><dd>{duration(d.duration_seconds)}</dd>
             <dt className="text-muted">Type</dt><dd className="capitalize">{d.object_class} ({Math.round(d.confidence * 100)}%)</dd>
           </dl>
+          <Link to={`/playback?camera=${d.camera_id}&t=${new Date(new Date(d.first_seen).getTime() - 5_000).toISOString()}`}
+                className="text-sm font-medium text-accent">
+            Watch recording →
+          </Link>
         </div>
       </div>
 
