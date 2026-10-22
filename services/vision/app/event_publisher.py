@@ -21,7 +21,9 @@ from app.overlay import draw_hit, draw_rules
 
 log = logging.getLogger(__name__)
 
-SYSTEM_SEVERITY = {"camera_offline": "high", "camera_online": "low"}
+SYSTEM_SEVERITY = {
+    "camera_tamper": "high",
+    "camera_tamper_cleared": "low","camera_offline": "high", "camera_online": "low"}
 
 
 class EventPublisher:

@@ -32,6 +32,7 @@ from app.event_publisher import EventPublisher
 from app.frame_reader import FrameReader
 from app.live import LivePublisher, live_payload
 from app.motion import MotionGate
+from app.tamper import TamperDetector
 from app.overlay import draw_rules
 from app.counts import LineCounter, MinuteCounter
 from app.rule_engine import Rule, RuleEngine, RuleHit, object_positions
@@ -66,7 +67,8 @@ def main() -> None:
     clip_config = ClipConfig(enabled=settings.clips_enabled)
     cameras: dict[int, dict] = {}
     # Runtime settings from the dashboard (Settings page); defaults until the API answers.
-    runtime = {"fps": settings.inference_fps, "search": False, "live": set(), "motion_skip": True}
+    runtime = {"fps": settings.inference_fps, "search": False, "live": set(), "motion_skip": True,
+               "tamper": True}
     live = LivePublisher(settings.api_base_url, settings.service_token) if api else None
     embedder: SiglipEmbedder | None = None
 
@@ -84,6 +86,7 @@ def main() -> None:
                 cam["tracker"] = new_tracker(fps)
             log.info("Analysis speed: %.1f frames/s per camera", fps)
         runtime["live"] = {int(c) for c in cfg.get("live_cameras", [])}
+        runtime["tamper"] = bool(cfg.get("tamper_alerts", True))
         if bool(cfg.get("motion_skip", True)) != runtime["motion_skip"]:
             runtime["motion_skip"] = bool(cfg.get("motion_skip", True))
             log.info("Motion skip %s", "on" if runtime["motion_skip"] else "off")
@@ -217,6 +220,15 @@ def main() -> None:
                 cam["last_image"] = frame.image
                 stats = cam["stats"]
 
+                # Tamper checks run on every camera, resting or not (about once a second).
+                if runtime["tamper"]:
+                    change = cam["tamper"].update(frame.image, now)
+                    if change:
+                        log.warning("%s tamper: %s", cam["key"], change.message)
+                        emit(cam, RuleHit(rule=None, occurred_at=frame.captured_at,
+                                          event_type="camera_tamper" if change.started else "camera_tamper_cleared",
+                                          details={"kind": change.kind, "message": change.message}), frame.image)
+
                 if runtime["motion_skip"] and not cam["motion"].should_analyse(frame.image, now, cam["tracking"]):
                     stats["skipped"] += 1
                     # Nothing moving: keep the live wall's picture fresh without running the AI.
@@ -332,6 +344,7 @@ def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipC
         "next_due": 0.0,
         "stats": {"inferences": 0, "skipped": 0, "infer_ms": 0.0, "last_report": time.monotonic()},
         "motion": MotionGate(),
+        "tamper": TamperDetector(),
         "tracking": False,
     }
 

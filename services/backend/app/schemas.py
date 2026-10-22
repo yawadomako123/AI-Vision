@@ -264,6 +264,7 @@ class SettingsOut(BaseModel):
     analysis_fps: float
     detection_sensitivity: Literal["high", "balanced", "low"]
     motion_skip: bool
+    tamper_alerts: bool
 
 
 class SettingsUpdate(BaseModel):
@@ -277,6 +278,7 @@ class SettingsUpdate(BaseModel):
     analysis_fps: float | None = Field(default=None, ge=1, le=5)
     detection_sensitivity: Literal["high", "balanced", "low"] | None = None
     motion_skip: bool | None = None
+    tamper_alerts: bool | None = None
 
 
 HTTP_URL = r"^https?://[^\s/$.?#][^\s]*$"

@@ -222,6 +222,7 @@ export interface AppSettings {
   analysis_fps: number;
   detection_sensitivity: "high" | "balanced" | "low";
   motion_skip: boolean;
+  tamper_alerts: boolean;
 }
 
 export interface NotificationSettings {

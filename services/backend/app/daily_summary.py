@@ -24,10 +24,11 @@ def build_summary(db: Session, now: datetime | None = None, problems: list[dict]
     since = now - timedelta(hours=24)
     by_type = dict(db.execute(
         select(Event.event_type, func.count()).where(Event.occurred_at >= since).group_by(Event.event_type)).all())
-    alerts = sum(n for t, n in by_type.items() if t not in ("camera_offline", "camera_online"))
+    INFO = ("camera_offline", "camera_online", "camera_tamper_cleared")
+    alerts = sum(n for t, n in by_type.items() if t not in INFO)
     to_review = db.scalar(select(func.count()).select_from(Event).where(
         Event.occurred_at >= since, Event.status == "unreviewed",
-        Event.event_type.not_in(["camera_offline", "camera_online"]))) or 0
+        Event.event_type.not_in(INFO))) or 0
     false_alarms = db.scalar(select(func.count()).select_from(Event).where(
         Event.occurred_at >= since, Event.status == "false_alarm")) or 0
     peak_people = db.scalar(select(func.max(CountSample.max_count)).where(
@@ -41,7 +42,7 @@ def build_summary(db: Session, now: datetime | None = None, problems: list[dict]
 
     parts = []
     if alerts:
-        top = sorted(((n, t) for t, n in by_type.items() if t not in ("camera_offline", "camera_online")), reverse=True)[:3]
+        top = sorted(((n, t) for t, n in by_type.items() if t not in INFO), reverse=True)[:3]
         kinds = ", ".join(f"{n} {LABELS.get(t, t).lower()}" for n, t in top)
         parts.append(f"{alerts} alert{'s' if alerts != 1 else ''} ({kinds})"
                      + (f", {to_review} to review" if to_review else ", all reviewed")

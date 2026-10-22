@@ -129,6 +129,13 @@ function Performance() {
           </select>
         </label>
         <label className="flex items-start gap-2">
+          <input type="checkbox" className="mt-0.5" checked={s.tamper_alerts} onChange={(e) => save.mutate({ tamper_alerts: e.target.checked })} />
+          <span>
+            Tamper alerts
+            <span className="block text-xs text-muted">Alert when a camera is covered, blacked out, smeared or moved (after 10 s). Lights going off in a room also count as "too dark".</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2">
           <input type="checkbox" className="mt-0.5" checked={s.motion_skip} onChange={(e) => save.mutate({ motion_skip: e.target.checked })} />
           <span>
             Rest the AI when nothing moves

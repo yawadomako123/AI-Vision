@@ -56,6 +56,8 @@ Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard 
 
 **Counting accuracy:** extra boxes on the same person (for example one for the whole body and one for the head) are removed automatically. **Settings → Performance → Detection sensitivity** sets how sure the model must be: *High* catches more in poor light but adds false or doubled boxes, *Balanced* is the default, and *Low* only counts very clear people and vehicles. It applies live.
 
+**Tamper alerts:** each camera learns its normal view and raises a high-severity *Camera tampering* alert (with a snapshot) when it's covered or blacked out, smeared or out of focus, or moved/turned away for 10 s, and a *back to normal* event afterwards. A camera deliberately re-aimed is accepted as the new normal after 5 minutes. Switching the lights off in a room looks the same as covering the lens, so it's reported as "too dark". On by default (Settings → Performance).
+
 **Motion skip:** on cameras where nothing moves and nobody is being tracked, the AI rests after 3 s and only checks one frame every 2 s; any movement wakes it straight away. On by default (Settings → Performance).
 
 **Performance:** Settings → Performance sets the *analysis speed* (frames checked per second per camera: 1, 2, 3 or 5). Use 1–2 on a weak PC or with many cameras; 3 is the default. It applies live.

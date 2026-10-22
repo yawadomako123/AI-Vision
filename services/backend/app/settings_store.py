@@ -20,6 +20,8 @@ DEFAULTS = {
         "detection_sensitivity": "balanced",
         # Rest the AI on cameras where nothing moves (a safety check still runs every 2 s).
         "motion_skip": True,
+        # Alert when a camera is covered, blacked out, smeared/out of focus, or moved.
+        "tamper_alerts": True,
     },
     "system": {
         "armed": True,

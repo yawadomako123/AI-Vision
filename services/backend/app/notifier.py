@@ -22,10 +22,12 @@ PRIORITY = {"low": 2, "medium": 3, "high": 4}  # ntfy: 1 min .. 5 max
 TAGS = {
     "zone_entry": "rotating_light", "line_crossing": "footprints", "loitering": "hourglass",
     "occupancy_exceeded": "busts_in_silhouette", "camera_offline": "warning", "camera_online": "white_check_mark",
+    "camera_tamper": "no_entry_sign", "camera_tamper_cleared": "white_check_mark",
 }
 LABELS = {
     "zone_entry": "Zone entry", "line_crossing": "Line crossing", "loitering": "Loitering",
     "occupancy_exceeded": "Occupancy exceeded", "camera_offline": "Camera offline", "camera_online": "Camera back online",
+    "camera_tamper": "Camera tampering", "camera_tamper_cleared": "Camera view back to normal",
 }
 
 
@@ -61,7 +63,7 @@ def build_message(event: dict, cfg: dict) -> dict:
 def should_notify(event: dict, cfg: dict) -> bool:
     if not cfg.get("enabled") or not cfg.get("topic"):
         return False
-    if event["event_type"] == "camera_online":
+    if event["event_type"] in ("camera_online", "camera_tamper_cleared"):
         return False  # the recovery is visible in the dashboard; don't wake anyone up for it
     return SEVERITY_RANK.get(event.get("severity", "medium"), 1) >= SEVERITY_RANK.get(cfg.get("min_severity", "high"), 2)
 

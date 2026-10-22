@@ -64,7 +64,7 @@ def worker_config(db: Session = Depends(get_db)):
     return {"clips": {"enabled": cfg["clips_enabled"]}, "search_enabled": cfg["search_enabled"],
             "analysis_fps": cfg["analysis_fps"], "live_cameras": sorted(hub.watched()),
             "detection_confidence": SENSITIVITY_CONFIDENCE.get(cfg["detection_sensitivity"], 0.5),
-            "motion_skip": cfg["motion_skip"]}
+            "motion_skip": cfg["motion_skip"], "tamper_alerts": cfg["tamper_alerts"]}
 
 
 @router.post("/live", status_code=status.HTTP_204_NO_CONTENT)
