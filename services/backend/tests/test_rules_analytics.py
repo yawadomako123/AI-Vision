@@ -128,7 +128,8 @@ def test_settings(client):
     assert client.get("/api/settings").json() == {
         "event_retention_days": 30, "count_retention_days": 90,
         "clips_enabled": True, "clip_retention_days": 7, "clip_storage_mb": 1024, "sighting_retention_days": 14,
-        "search_enabled": False, "analysis_fps": 3, "detection_sensitivity": "balanced"}
+        "search_enabled": False, "analysis_fps": 3, "detection_sensitivity": "balanced",
+        "motion_skip": True}
     assert client.patch("/api/settings", json={"event_retention_days": 7}).json()["event_retention_days"] == 7
     assert client.patch("/api/settings", json={"event_retention_days": 0}).status_code == 422
 
@@ -197,7 +198,8 @@ def test_clip_ingest_retention_and_cap(client, camera, db_session, tmp_path):
 
 def test_worker_config(client):
     assert client.get("/api/internal/config", headers=WORKER).json() == {
-        "clips": {"enabled": True}, "search_enabled": False, "analysis_fps": 3, "live_cameras": [], "detection_confidence": 0.5}
+        "clips": {"enabled": True}, "search_enabled": False, "analysis_fps": 3, "live_cameras": [], "detection_confidence": 0.5,
+        "motion_skip": True}
     client.patch("/api/settings", json={"clips_enabled": False, "analysis_fps": 2})
     cfg = client.get("/api/internal/config", headers=WORKER).json()
     assert cfg["clips"] == {"enabled": False} and cfg["analysis_fps"] == 2

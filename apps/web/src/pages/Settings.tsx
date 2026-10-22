@@ -129,6 +129,13 @@ function Performance() {
           </select>
         </label>
         <label className="flex items-start gap-2">
+          <input type="checkbox" className="mt-0.5" checked={s.motion_skip} onChange={(e) => save.mutate({ motion_skip: e.target.checked })} />
+          <span>
+            Rest the AI when nothing moves
+            <span className="block text-xs text-muted">Quiet cameras use a fraction of the computer's power. A quick check still runs every 2 s, and it never rests while someone is being tracked.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2">
           <input type="checkbox" className="mt-0.5" checked={s.search_enabled} onChange={(e) => save.mutate({ search_enabled: e.target.checked })} />
           <span>
             Plain-English search (“person in a red jacket”)

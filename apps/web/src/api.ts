@@ -221,6 +221,7 @@ export interface AppSettings {
   search_enabled: boolean;
   analysis_fps: number;
   detection_sensitivity: "high" | "balanced" | "low";
+  motion_skip: boolean;
 }
 
 export interface NotificationSettings {

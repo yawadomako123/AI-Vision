@@ -31,6 +31,7 @@ from app.detector import COCO_CLASSES, Detector
 from app.event_publisher import EventPublisher
 from app.frame_reader import FrameReader
 from app.live import LivePublisher, live_payload
+from app.motion import MotionGate
 from app.overlay import draw_rules
 from app.counts import LineCounter, MinuteCounter
 from app.rule_engine import Rule, RuleEngine, RuleHit, object_positions
@@ -65,7 +66,7 @@ def main() -> None:
     clip_config = ClipConfig(enabled=settings.clips_enabled)
     cameras: dict[int, dict] = {}
     # Runtime settings from the dashboard (Settings page); defaults until the API answers.
-    runtime = {"fps": settings.inference_fps, "search": False, "live": set()}
+    runtime = {"fps": settings.inference_fps, "search": False, "live": set(), "motion_skip": True}
     live = LivePublisher(settings.api_base_url, settings.service_token) if api else None
     embedder: SiglipEmbedder | None = None
 
@@ -83,6 +84,9 @@ def main() -> None:
                 cam["tracker"] = new_tracker(fps)
             log.info("Analysis speed: %.1f frames/s per camera", fps)
         runtime["live"] = {int(c) for c in cfg.get("live_cameras", [])}
+        if bool(cfg.get("motion_skip", True)) != runtime["motion_skip"]:
+            runtime["motion_skip"] = bool(cfg.get("motion_skip", True))
+            log.info("Motion skip %s", "on" if runtime["motion_skip"] else "off")
         conf = cfg.get("detection_confidence")
         if conf and abs(float(conf) - detector.confidence) > 1e-6:
             detector.confidence = float(conf)
@@ -211,6 +215,15 @@ def main() -> None:
                     continue
                 cam["next_due"] = now + 1.0 / runtime["fps"]
                 cam["last_image"] = frame.image
+                stats = cam["stats"]
+
+                if runtime["motion_skip"] and not cam["motion"].should_analyse(frame.image, now, cam["tracking"]):
+                    stats["skipped"] += 1
+                    # Nothing moving: keep the live wall's picture fresh without running the AI.
+                    if live and cam["id"] in runtime["live"] and live.wants_preview(cam["id"], now):
+                        h, w = frame.image.shape[:2]
+                        live.offer(live_payload(cam["id"], sv.Detections.empty(), [], w, h, frame.captured_at, frame.image))
+                    continue
 
                 t0 = time.perf_counter()
                 detections = cam["tracker"].update_with_detections(detector(frame.image))
@@ -233,7 +246,7 @@ def main() -> None:
                 if api:
                     api.send_counts(samples)
                     api.send_line_counts(line_samples)
-                stats = cam["stats"]
+                cam["tracking"] = len(detections) > 0
                 stats["inferences"] += 1
                 stats["infer_ms"] += infer_ms
 
@@ -262,11 +275,13 @@ def main() -> None:
                         "status": cam["reader"].status,
                         "infer_fps": cam["fps"],
                         "avg_infer_ms": round(stats["infer_ms"] / stats["inferences"], 1),
+                        "idle": cam["motion"].idle,  # motion skip: nothing moving, AI resting
+                        "skipped": stats["skipped"],
                         "frame_age_ms": round((time.time() - frame.captured_at) * 1000),
                         "objects": counts,
                         "track_ids": [int(t) for t in detections.tracker_id],
                     }), flush=True)
-                    stats.update(inferences=0, infer_ms=0.0, last_report=now)
+                    stats.update(inferences=0, skipped=0, infer_ms=0.0, last_report=now)
 
             if args.show and cv2.waitKey(1) & 0xFF == ord("q"):
                 break
@@ -315,7 +330,9 @@ def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipC
         "last_image": None,
         "fps": None,
         "next_due": 0.0,
-        "stats": {"inferences": 0, "infer_ms": 0.0, "last_report": time.monotonic()},
+        "stats": {"inferences": 0, "skipped": 0, "infer_ms": 0.0, "last_report": time.monotonic()},
+        "motion": MotionGate(),
+        "tracking": False,
     }
 
 

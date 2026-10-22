@@ -18,6 +18,8 @@ DEFAULTS = {
         "analysis_fps": 3,
         # How sure the model must be before something counts: high = catches more, also more false boxes.
         "detection_sensitivity": "balanced",
+        # Rest the AI on cameras where nothing moves (a safety check still runs every 2 s).
+        "motion_skip": True,
     },
     "system": {
         "armed": True,

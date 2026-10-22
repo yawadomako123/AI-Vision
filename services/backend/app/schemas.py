@@ -263,6 +263,7 @@ class SettingsOut(BaseModel):
     search_enabled: bool
     analysis_fps: float
     detection_sensitivity: Literal["high", "balanced", "low"]
+    motion_skip: bool
 
 
 class SettingsUpdate(BaseModel):
@@ -275,6 +276,7 @@ class SettingsUpdate(BaseModel):
     search_enabled: bool | None = None
     analysis_fps: float | None = Field(default=None, ge=1, le=5)
     detection_sensitivity: Literal["high", "balanced", "low"] | None = None
+    motion_skip: bool | None = None
 
 
 HTTP_URL = r"^https?://[^\s/$.?#][^\s]*$"
