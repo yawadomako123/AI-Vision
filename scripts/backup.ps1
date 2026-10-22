@@ -35,6 +35,25 @@ if ($Keep -gt 0) {
         ForEach-Object { Remove-Item $_.FullName; Write-Host "Removed old backup $($_.Name)" }
 }
 
+# Off-machine copy: BACKUP_COPY_DIR in .env, e.g. a OneDrive or Google Drive folder that syncs
+# to the cloud. Only database backups are copied (not .env: keep that somewhere safe yourself).
+$envFile = Join-Path $root ".env"
+$copyLine = if (Test-Path $envFile) { Get-Content $envFile | Where-Object { $_ -match '^\s*BACKUP_COPY_DIR\s*=' } | Select-Object -First 1 }
+$copyDir = if ($copyLine) { ($copyLine -split "=", 2)[1].Trim() } else { "" }
+if ($copyDir) {
+    try {
+        New-Item -ItemType Directory -Force $copyDir -ErrorAction Stop | Out-Null
+        Copy-Item $dump $copyDir -ErrorAction Stop
+        Write-Host "Copied -> $copyDir"
+        if ($Keep -gt 0) {
+            Get-ChildItem $copyDir -Filter "aivision-*.dump" | Sort-Object Name -Descending | Select-Object -Skip $Keep |
+                ForEach-Object { Remove-Item $_.FullName }
+        }
+    } catch {
+        Write-Warning "Couldn't copy the backup to $copyDir ($($_.Exception.Message)); the local copy is fine."
+    }
+}
+
 if ($IncludeSnapshots) {
     $zip = Join-Path $dir "snapshots-$stamp.zip"
     Compress-Archive -Path (Join-Path $root "storage\events\*") -DestinationPath $zip
