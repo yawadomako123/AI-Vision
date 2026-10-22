@@ -4,7 +4,8 @@
   and restarts any of them that crash or hang.
 
 .DESCRIPTION
-  - Waits for Docker Desktop (it can take a minute after logging in), then `docker compose up -d`.
+  - Starts Docker Desktop if it isn't running and waits for it (a minute or two after a reboot),
+    then `docker compose up -d`.
   - Starts the API (with database migrations) and the vision worker as hidden background processes.
   - Every 10 s: restarts a process that exited; restarts the API if /health stops answering;
     restarts the worker if its heartbeat file (storage/worker.heartbeat) goes stale (a hang).
@@ -99,6 +100,7 @@ function Test-Api {
 # --- Docker ----------------------------------------------------------------------------------
 function Start-Docker {
     $deadline = (Get-Date).AddMinutes(10)
+    $launched = $false
     while ((Get-Date) -lt $deadline) {
         # Through cmd: Windows PowerShell turns a native program's stderr into error records.
         cmd.exe /c "docker info >nul 2>&1"
@@ -106,6 +108,14 @@ function Start-Docker {
             $out = cmd.exe /c "cd /d `"$Root`" && docker compose up -d 2>&1"
             $out | ForEach-Object { Log "docker: $_" }
             return $true
+        }
+        # Not running (e.g. just after a reboot): start Docker Desktop ourselves, once, so recovery
+        # doesn't depend on its "start when you sign in" setting.
+        $desktop = Join-Path $env:ProgramFiles "Docker\Docker\Docker Desktop.exe"
+        if (-not $launched -and -not (Get-Process "Docker Desktop" -ErrorAction SilentlyContinue) -and (Test-Path $desktop)) {
+            Log "starting Docker Desktop"
+            Start-Process $desktop
+            $launched = $true
         }
         Log "waiting for Docker Desktop..."
         Start-Sleep -Seconds 15

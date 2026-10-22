@@ -139,7 +139,7 @@ Pick street-level cameras: in wide aerial shots people are only a few pixels tal
 
 - **Crash recovery:** a crashed API or worker restarts within about 10 s. Repeated crashes back off up to 5 min.
 - **Hang detection:** restarts the API if `/health` stops answering, and the worker if its heartbeat file (`storage/worker.heartbeat`, refreshed every 5 s) goes stale for 2 min.
-- **Docker:** waits for Docker Desktop after login, then starts the database and MediaMTX. Turn on Docker Desktop's *Start when you sign in*.
+- **Docker:** starts Docker Desktop if it isn't running (no need for its *Start when you sign in* setting), waits for it, then starts the database and MediaMTX.
 - **Nightly backup:** after 02:00 each day it backs up the database to `backups\` and keeps the newest 14 (see *Backups*).
 - **Logs:** `storage/logs/` (`supervisor.log`, `api*.log`, `worker*.log`; the previous run is kept as `*.prev.log`).
 - **Phone alerts when the system itself breaks:** with phone notifications on, you get a push when the vision worker stops reporting for 2 min or the disk drops below 2 GB / 5 % free, and another when it's fixed. Current problems also show at the top of **Settings → System health**.
