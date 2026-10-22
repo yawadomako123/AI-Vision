@@ -158,9 +158,9 @@ Measured on this laptop (i7-1185G7, Iris Xe, search on, 6 min each):
 | Cameras | Online | Frames analysed per camera | Worker RAM | Worker CPU | Alert delay (median / 95%) |
 |---|---|---|---|---|---|
 | 2 | 100 % | 2.9 /s | ~700 MB | ~6 % | – |
-| 4 | 100 % | 1.6 /s | ~870 MB (flat) | ~11 % | 0.24 s / 0.39 s |
+| 4 | 100 % | 2.3 /s | ~770 MB (flat) | ~11 % | 0.18 s / 0.23 s |
 
-The integrated GPU manages about 6.5 detections a second in total, shared between cameras. 1.6 /s per camera still catches people walking through, but for 4+ cameras at the full 3 /s use a faster GPU or set **Analysis speed** to 2.
+The integrated GPU manages about 9–12 detections a second in total, shared between cameras (image preparation runs on the GPU as part of the model). These figures are with constant movement; with motion skip, quiet cameras use almost nothing, leaving the GPU to the busy ones.
 
 ## Phone notifications (ntfy, free)
 

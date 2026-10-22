@@ -104,10 +104,22 @@ class Detector:
         # GPU compilation takes ~1 min the first time; the cache makes later starts take seconds.
         cache = os.environ.get("OPENVINO_CACHE_DIR") or str(model_path.parent / ".ov_cache")
         core.set_property({"CACHE_DIR": cache})
-        compiled = core.compile_model(core.read_model(model_path), device, {"PERFORMANCE_HINT": "LATENCY"})
+        model = core.read_model(model_path)
+        self.resolution = int(model.input(0).get_partial_shape()[2].get_length())
+        # Colour conversion, normalisation and layout run inside the model on the device, so the
+        # CPU only resizes a uint8 image. Doing this in NumPy took ~30% of the worker's main loop.
+        from openvino.preprocess import ColorFormat, PrePostProcessor
+
+        ppp = PrePostProcessor(model)
+        ppp.input().tensor().set_element_type(ov.Type.u8).set_layout(ov.Layout("NHWC")) \
+            .set_color_format(ColorFormat.BGR)
+        ppp.input().preprocess().convert_element_type(ov.Type.f32).convert_color(ColorFormat.RGB) \
+            .mean([float(m) * 255 for m in _MEAN]).scale([float(v) * 255 for v in _STD])
+        ppp.input().model().set_layout(ov.Layout("NCHW"))
+        compiled = core.compile_model(ppp.build(), device, {"PERFORMANCE_HINT": "LATENCY"})
         request = compiled.create_infer_request()
-        self.resolution = int(compiled.input(0).get_partial_shape()[2].get_length())
         names = [o.get_any_name() for o in compiled.outputs]
+        self._prepare = lambda bgr: cv2.resize(bgr, (self.resolution, self.resolution))[None]
 
         def run(x: np.ndarray) -> dict[str, np.ndarray]:
             result = request.infer({0: x})
@@ -117,6 +129,7 @@ class Detector:
         self.provider = f"OpenVINO {device}"
 
     def _init_onnxruntime(self, model_path: Path) -> None:
+        self._prepare = self.preprocess
         import onnxruntime as ort
 
         session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
@@ -133,7 +146,7 @@ class Detector:
 
     def __call__(self, bgr: np.ndarray) -> sv.Detections:
         h, w = bgr.shape[:2]
-        outputs = self._run(self.preprocess(bgr))
+        outputs = self._run(self._prepare(bgr))
         boxes = outputs["dets"][0]  # (N, 4) cx, cy, w, h normalized
         logits = outputs["labels"][0]  # (N, C)
 
