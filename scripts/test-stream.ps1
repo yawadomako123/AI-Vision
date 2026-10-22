@@ -11,8 +11,16 @@ param(
     [string]$Clip = "",
     [string]$Server = "127.0.0.1:8554",
     [string]$User = "publisher",
-    [string]$Pass = "changeme-publish"
+    [string]$Pass = ""
 )
+# Publish password: MEDIAMTX_PUBLISH_PASSWORD in .env (MediaMTX gets the same value via compose.yaml).
+if (-not $Pass) {
+    $envFile = Join-Path $PSScriptRoot "..\.env"
+    $line = if (Test-Path $envFile) { Get-Content $envFile | Where-Object { $_ -match '^\s*MEDIAMTX_PUBLISH_PASSWORD\s*=' } | Select-Object -First 1 }
+    if (-not $line) { Write-Error "Set MEDIAMTX_PUBLISH_PASSWORD in .env (see .env.example)"; exit 1 }
+    $Pass = ($line -split "=", 2)[1].Trim()
+}
+
 
 $url = "rtsp://${User}:${Pass}@${Server}/$Path"
 $source = if ($Clip) { @("-re", "-stream_loop", "-1", "-i", $Clip) } else { @("-re", "-f", "lavfi", "-i", "testsrc2=size=640x480:rate=15") }

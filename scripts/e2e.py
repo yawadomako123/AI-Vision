@@ -122,7 +122,7 @@ def start_publisher() -> subprocess.Popen:
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-stream_loop", "-1", "-i", str(CLIP),
          "-an", "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-g", "15",
          "-pix_fmt", "yuv420p", "-f", "rtsp", "-rtsp_transport", "tcp",
-         f"rtsp://publisher:changeme-publish@{RTSP}/{PATH}"],
+         f"rtsp://publisher:{ENV['MEDIAMTX_PUBLISH_PASSWORD']}@{RTSP}/{PATH}"],
         stdin=subprocess.DEVNULL, stdout=LOG, stderr=LOG,
     )
 

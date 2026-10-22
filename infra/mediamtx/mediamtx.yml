@@ -31,7 +31,8 @@ moq: no
 api: no
 
 # Anyone on the LAN can READ; only someone with the password can PUBLISH.
-# Change the publish password before using this outside your own network.
+# The real publish password is MEDIAMTX_PUBLISH_PASSWORD in .env: compose.yaml passes it in as
+# MTX_AUTHINTERNALUSERS_1_PASS, which replaces the placeholder below (so it never sits in git).
 authInternalUsers:
   - user: any
     ips: []
@@ -39,7 +40,7 @@ authInternalUsers:
       - action: read
       - action: playback
   - user: publisher
-    pass: changeme-publish
+    pass: set-MEDIAMTX_PUBLISH_PASSWORD-in-.env
     ips: []
     permissions:
       - action: publish

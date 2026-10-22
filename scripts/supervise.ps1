@@ -18,6 +18,8 @@
   .\scripts\supervise.ps1
 #>
 param(
+    [int]$BackupHour = 2,           # nightly database backup after this hour (local time)
+    [int]$KeepBackups = 14,
     [int]$CheckSeconds = 10,
     [int]$WorkerHangSeconds = 120,
     [int]$WorkerStartupSeconds = 300
@@ -111,6 +113,24 @@ function Start-Docker {
     return $false
 }
 
+# --- nightly backup --------------------------------------------------------------------------
+$BackupStamp = Join-Path $Logs "last-backup.txt"
+$NextBackupTry = Get-Date
+function Invoke-NightlyBackup {
+    $today = (Get-Date).ToString("yyyy-MM-dd")
+    if ((Get-Date).Hour -lt $BackupHour) { return }
+    if ((Test-Path $BackupStamp) -and ((Get-Content $BackupStamp -Raw).Trim() -eq $today)) { return }
+    Log "nightly backup starting"
+    $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$Root\scripts\backup.ps1" -Keep $KeepBackups 2>&1
+    $code = $LASTEXITCODE
+    $out | ForEach-Object { Log "backup: $_" }
+    if ($code -eq 0) { Set-Content -Path $BackupStamp -Value $today -Encoding ascii }
+    else {
+        Log "nightly backup FAILED (exit $code); retrying in an hour"
+        $script:NextBackupTry = (Get-Date).AddHours(1)
+    }
+}
+
 # --- main loop -------------------------------------------------------------------------------
 try {
     Log "supervisor starting in $Root"
@@ -142,6 +162,7 @@ try {
                 else { $s.Fails = 0 }
             }
         }
+        if ((Get-Date) -ge $NextBackupTry) { Invoke-NightlyBackup }
       } catch {
         Log "supervisor error (continuing): $_"
       }

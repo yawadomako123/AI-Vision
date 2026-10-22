@@ -42,7 +42,7 @@ def h264_clip(src: Path) -> Path:
 def publish(clip: Path, path: str, log) -> subprocess.Popen:
     return subprocess.Popen(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-stream_loop", "-1", "-i", str(clip), "-an", "-c", "copy",
-         "-f", "rtsp", "-rtsp_transport", "tcp", f"rtsp://publisher:changeme-publish@{RTSP}/{path}"],
+         "-f", "rtsp", "-rtsp_transport", "tcp", f"rtsp://publisher:{ENV['MEDIAMTX_PUBLISH_PASSWORD']}@{RTSP}/{path}"],
         stdin=subprocess.DEVNULL, stdout=log, stderr=log)
 
 

@@ -5,8 +5,14 @@
 .EXAMPLE
   .\scripts\backup.ps1                     # database only
   .\scripts\backup.ps1 -IncludeSnapshots   # plus storage\events as a .zip
+  .\scripts\backup.ps1 -Keep 14             # then delete all but the newest 14 database backups
+
+  The supervisor (supervise.ps1) runs this every night with -Keep 14. Copy the backups folder to
+  another drive or cloud folder now and then: a backup on the same disk won't survive a dead disk.
+  Camera passwords in the backup are encrypted with CAMERA_SECRET_KEY from .env, so keep a copy
+  of .env somewhere safe too.
 #>
-param([switch]$IncludeSnapshots)
+param([switch]$IncludeSnapshots, [int]$Keep = 0)
 # Native tools write notices to stderr; PowerShell 5 would treat those as errors. Check exit codes instead.
 $ErrorActionPreference = "Continue"
 $root = Resolve-Path "$PSScriptRoot\.."
@@ -23,6 +29,11 @@ $container = (docker compose -f "$root\compose.yaml" ps -q db)
 docker cp "${container}:/tmp/backup.dump" $dump | Out-Null
 docker compose -f "$root\compose.yaml" exec -T db rm -f /tmp/backup.dump
 Write-Host "Database -> $dump ($([math]::Round((Get-Item $dump).Length / 1KB)) KB)"
+
+if ($Keep -gt 0) {
+    Get-ChildItem $dir -Filter "aivision-*.dump" | Sort-Object Name -Descending | Select-Object -Skip $Keep |
+        ForEach-Object { Remove-Item $_.FullName; Write-Host "Removed old backup $($_.Name)" }
+}
 
 if ($IncludeSnapshots) {
     $zip = Join-Path $dir "snapshots-$stamp.zip"

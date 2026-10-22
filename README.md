@@ -97,7 +97,7 @@ npm run build                 # the API serves this build at http://127.0.0.1:80
 
 **Android phone (free, for testing):** install **Larix Broadcaster** and add a connection:
 - URL: `rtsp://<laptop Wi-Fi IP>:8554/cam1` (find the IP with `ipconfig`)
-- User: `publisher`, password: `changeme-publish`
+- User: `publisher`, password: the `MEDIAMTX_PUBLISH_PASSWORD` value in `.env` (generated at setup; Docker passes it to MediaMTX)
 - Video: 640×480, 15 fps
 
 In the dashboard, add a camera with stream URL `rtsp://127.0.0.1:8554/cam1`. Mount the phone high and angled down, keep it plugged in, and only film places you're allowed to. If the phone can't connect, allow Docker Desktop on *Private* networks in Windows Firewall (TCP 8554).
@@ -140,6 +140,7 @@ Pick street-level cameras: in wide aerial shots people are only a few pixels tal
 - **Crash recovery:** a crashed API or worker restarts within about 10 s. Repeated crashes back off up to 5 min.
 - **Hang detection:** restarts the API if `/health` stops answering, and the worker if its heartbeat file (`storage/worker.heartbeat`, refreshed every 5 s) goes stale for 2 min.
 - **Docker:** waits for Docker Desktop after login, then starts the database and MediaMTX. Turn on Docker Desktop's *Start when you sign in*.
+- **Nightly backup:** after 02:00 each day it backs up the database to `backups\` and keeps the newest 14 (see *Backups*).
 - **Logs:** `storage/logs/` (`supervisor.log`, `api*.log`, `worker*.log`; the previous run is kept as `*.prev.log`).
 - **Phone alerts when the system itself breaks:** with phone notifications on, you get a push when the vision worker stops reporting for 2 min or the disk drops below 2 GB / 5 % free, and another when it's fixed. Current problems also show at the top of **Settings → System health**.
 

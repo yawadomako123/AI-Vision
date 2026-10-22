@@ -10,6 +10,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    environment:
+      # Overrides the placeholder in mediamtx.yml, so the real password lives only in .env.
+      MTX_AUTHINTERNALUSERS_1_PASS: ${MEDIAMTX_PUBLISH_PASSWORD:?set MEDIAMTX_PUBLISH_PASSWORD in .env}
     ports:
       # RTSP is bound to all interfaces so phones/cameras on the LAN can publish.
       - "8554:8554"
