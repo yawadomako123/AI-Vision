@@ -1,6 +1,7 @@
 import asyncio
 import io
 import time
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 import av
@@ -16,7 +17,9 @@ from app.crypto import decrypt, encrypt, mask_url
 from app.db import get_db
 from app.live import hub, latest_preview
 from app.models import Camera, User
-from app.schemas import CameraCreate, CameraOut, CameraTestResult, CameraUpdate, OnvifStreamsIn, StreamProbeIn
+from app.schemas import (
+    CameraCreate, CameraMuteIn, CameraOut, CameraTestResult, CameraUpdate, OnvifStreamsIn, StreamProbeIn,
+)
 from app.serializers import camera_out
 
 router = APIRouter(prefix="/api/cameras", tags=["cameras"])
@@ -154,6 +157,21 @@ def probe_stream(body: StreamProbeIn, _: User = Depends(require_admin)):
             return CameraTestResult(ok=True, width=frame.width, height=frame.height, codec=stream.codec_context.name)
     except Exception as exc:  # noqa: BLE001
         return CameraTestResult(ok=False, error=_redact(exc, body.stream_url))
+
+
+@router.put("/{camera_id}/mute", response_model=CameraOut)
+def mute_camera(camera_id: int, body: CameraMuteIn, request: Request, user: User = Depends(current_user),
+                db: Session = Depends(get_db)):
+    """Silence phone notifications from one camera for a while (0 = unmute). Operators may too,
+    like arming: detection and recording carry on."""
+    camera = _get(db, camera_id)
+    camera.notify_muted_until = (datetime.now(timezone.utc) + timedelta(minutes=body.minutes)) if body.minutes else None
+    audit(db, request, user, "camera.mute" if body.minutes else "camera.unmute", f"camera:{camera.name}",
+          minutes=body.minutes)
+    db.commit()
+    out = camera_out(camera)
+    hub.broadcast_from_sync("camera", out.model_dump())
+    return out
 
 
 @router.get("/{camera_id}/preview", responses={200: {"content": {"image/jpeg": {}}}})

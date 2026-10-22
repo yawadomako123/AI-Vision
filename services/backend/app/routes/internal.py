@@ -149,5 +149,9 @@ def ingest_event(body: EventIn, db: Session = Depends(get_db)):
     db.refresh(event)
     out = event_out(event)
     hub.broadcast_from_sync("event", out.model_dump())
-    notifier.notify({**out.model_dump(), "snapshot_path": event.snapshot_path}, get_settings(db, "notifications"))
+    muted = event.camera.notify_muted_until
+    if muted and muted.tzinfo is None:  # SQLite (tests) returns naive datetimes
+        muted = muted.replace(tzinfo=timezone.utc)
+    if not (muted and muted > datetime.now(timezone.utc)):  # "Mute camera 1 h" from a notification
+        notifier.notify({**out.model_dump(), "snapshot_path": event.snapshot_path}, get_settings(db, "notifications"))
     return out

@@ -81,6 +81,9 @@ function CameraCard({ camera, onEdit }: { camera: Camera; onEdit: () => void }) 
   const toggle = useMutation({ mutationFn: () => api.updateCamera(camera.id, { enabled: !camera.enabled }), onSuccess: invalidate });
   const remove = useMutation({ mutationFn: () => api.deleteCamera(camera.id), onSuccess: invalidate });
   const runTest = useMutation({ mutationFn: () => api.testCamera(camera.id), onSuccess: setTest });
+  const mute = useMutation({ mutationFn: (minutes: number) => api.muteCamera(camera.id, minutes), onSuccess: invalidate });
+  const mutedUntil = camera.notify_muted_until && new Date(camera.notify_muted_until) > new Date()
+    ? new Date(camera.notify_muted_until) : null;
 
   return (
     <Card>
@@ -106,6 +109,12 @@ function CameraCard({ camera, onEdit }: { camera: Camera; onEdit: () => void }) 
           <dd>{timeAgo(camera.last_seen_at)}</dd>
         </dl>
 
+        {mutedUntil && (
+          <p className="flex items-center justify-between gap-2 rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn">
+            <span>Phone notifications muted until {mutedUntil.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. Detection still runs.</span>
+            <button type="button" className="font-medium underline" onClick={() => mute.mutate(0)} disabled={mute.isPending}>Unmute</button>
+          </p>
+        )}
         {test && (
           <p role="status" className={`rounded-lg px-3 py-2 text-sm ${test.ok ? "bg-ok/10 text-ok" : "bg-bad/10 text-bad"}`}>
             {test.ok ? `Connected: ${test.width}×${test.height} ${test.codec}` : `Could not connect: ${test.error}`}
@@ -120,6 +129,11 @@ function CameraCard({ camera, onEdit }: { camera: Camera; onEdit: () => void }) 
             Rules
           </Link>
           <Button onClick={() => runTest.mutate()} disabled={runTest.isPending}>{runTest.isPending ? "Testing…" : "Test"}</Button>
+          {!mutedUntil && (
+            <Button onClick={() => mute.mutate(60)} disabled={mute.isPending} title="Silence phone notifications from this camera for 1 hour">
+              Mute 1 h
+            </Button>
+          )}
           {isAdmin && (
             <>
               <Button onClick={onEdit}>Edit</Button>

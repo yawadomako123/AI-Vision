@@ -12,6 +12,7 @@ export interface Camera {
   last_seen_at: string | null;
   infer_fps: number | null;
   created_at: string;
+  notify_muted_until: string | null; // phone notifications silenced until then
 }
 
 export interface CameraInput {
@@ -310,6 +311,8 @@ export const api = {
       method: "POST", body: JSON.stringify({ onvif_url, username, password }) }),
   probeStream: (stream_url: string) =>
     request<CameraTestResult>("/api/cameras/probe", { method: "POST", body: JSON.stringify({ stream_url }) }),
+  muteCamera: (id: number, minutes: number) =>
+    request<Camera>(`/api/cameras/${id}/mute`, { method: "PUT", body: JSON.stringify({ minutes }) }),
   testCamera: (id: number) => request<CameraTestResult>(`/api/cameras/${id}/test`, { method: "POST" }),
 
   events: (f: EventFilters) => request<EventPage>(`/api/events${query({ ...f })}`),

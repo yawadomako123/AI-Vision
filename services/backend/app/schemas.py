@@ -61,6 +61,11 @@ class CameraOut(BaseModel):
     last_seen_at: datetime | None
     infer_fps: float | None
     created_at: datetime
+    notify_muted_until: datetime | None = None
+
+
+class CameraMuteIn(BaseModel):
+    minutes: int = Field(ge=0, le=24 * 60)  # 0 = unmute
 
 
 class CameraTestResult(BaseModel):

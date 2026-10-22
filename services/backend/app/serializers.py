@@ -14,6 +14,7 @@ def camera_out(c: Camera) -> CameraOut:
         last_seen_at=c.last_seen_at,
         infer_fps=c.infer_fps,
         created_at=c.created_at,
+        notify_muted_until=c.notify_muted_until,
     )
 
 

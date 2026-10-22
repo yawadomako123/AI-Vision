@@ -24,6 +24,8 @@ class Camera(Base):
     status: Mapped[str] = mapped_column(String(20), default="unknown", index=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     infer_fps: Mapped[float | None] = mapped_column(Float)
+    # Phone notifications from this camera are silenced until then (detection keeps running).
+    notify_muted_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 

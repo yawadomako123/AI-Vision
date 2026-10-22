@@ -13,6 +13,7 @@ from pathlib import Path
 
 import httpx
 
+from app.actions import ntfy_actions, ntfy_actions_header
 from app.crypto import decrypt
 
 log = logging.getLogger(__name__)
@@ -57,6 +58,8 @@ def build_message(event: dict, cfg: dict) -> dict:
     }
     if cfg.get("dashboard_url"):
         msg["click"] = f"{cfg['dashboard_url'].rstrip('/')}/events?open={event['id']}"
+        if event["event_type"] not in ("camera_online", "camera_tamper_cleared"):
+            msg["actions"] = ntfy_actions(event, cfg["dashboard_url"])
     return msg
 
 
@@ -86,6 +89,8 @@ def send(cfg: dict, msg: dict, snapshot: Path | None = None, client: httpx.Clien
             })
             if msg.get("click"):
                 headers["Click"] = msg["click"]
+            if msg.get("actions"):
+                headers["Actions"] = ntfy_actions_header(msg["actions"])
             r = client.put(f"{server}/{cfg['topic']}", content=snapshot.read_bytes(), headers=headers)
             if 400 <= r.status_code < 500:
                 # e.g. the server has attachments disabled or a size limit: the alert matters
