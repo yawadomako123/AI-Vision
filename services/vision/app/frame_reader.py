@@ -13,6 +13,8 @@ from dataclasses import dataclass
 import av
 import numpy as np
 
+from app.privacy import PrivacyMask
+
 log = logging.getLogger(__name__)
 
 
@@ -39,6 +41,8 @@ class FrameReader:
         # Optional callback for every decoded frame (image, unix time), e.g. the clip pre-roll.
         # Called on the reader thread; it must be fast and thread-safe.
         self.on_frame = None
+        # Privacy masks are applied here, first, so nothing downstream sees the masked areas.
+        self.mask = PrivacyMask()
         self._latest: Frame | None = None
         self._lock = threading.Lock()
         self._new_frame = threading.Event()
@@ -133,6 +137,7 @@ class FrameReader:
 
     def _publish(self, image: np.ndarray) -> None:
         now = time.time()
+        self.mask.apply(image)
         with self._lock:
             self.frames_decoded += 1
             self._latest = Frame(image=image, captured_at=now, index=self.frames_decoded)

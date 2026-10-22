@@ -116,7 +116,7 @@ export interface AuthStatus {
   user: User | null;
 }
 
-export type RuleType = "zone_entry" | "line_crossing" | "loitering" | "occupancy";
+export type RuleType = "zone_entry" | "line_crossing" | "loitering" | "occupancy" | "privacy_mask";
 export const isLine = (t: RuleType) => t === "line_crossing";
 export type Point = [number, number];
 

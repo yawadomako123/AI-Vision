@@ -296,3 +296,16 @@ def test_detection_sensitivity_reaches_worker(client, operator):
     assert conf() == 0.4
     assert client.patch("/api/settings", json={"detection_sensitivity": "extreme"}).status_code == 422
     assert operator.patch("/api/settings", json={"detection_sensitivity": "low"}).status_code == 403
+
+
+def test_privacy_masks_always_reach_the_worker(client, camera):
+    url = f"/api/cameras/{camera['id']}/rules"
+    mask = {"type": "privacy_mask", "name": "Neighbour's window", "points": [[0.7, 0.1], [0.95, 0.1], [0.95, 0.4]]}
+    assert client.post(url, json={**mask, "points": [[0, 0], [1, 1]]}).status_code == 422  # needs an area
+    assert client.post(url, json=mask).status_code == 201
+    client.post(url, json=ZONE)
+    feed = lambda: sorted(r["type"] for r in client.get("/api/internal/rules", headers=WORKER).json()[str(camera["id"])])
+    assert feed() == ["privacy_mask", "zone_entry"]
+    client.put("/api/arming", json={"armed": False})
+    assert feed() == ["privacy_mask"]  # disarmed: alerts stop, masks don't
+    client.put("/api/arming", json={"armed": True})

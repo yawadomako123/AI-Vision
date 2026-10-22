@@ -11,6 +11,7 @@ const TYPES: { type: RuleType; label: string; hint: string; color: string; more?
   { type: "line_crossing", label: "Line", hint: "Count people crossing, and optionally alert", color: "var(--warn)" },
   { type: "loitering", label: "Loitering", hint: "Alert when someone stays too long", color: "var(--accent)" },
   { type: "occupancy", label: "Occupancy", hint: "Alert when too many people are inside", color: "#9085e9", more: true },
+  { type: "privacy_mask", label: "Privacy mask", hint: "Black out an area: it's never analysed or saved", color: "#4b5563", more: true },
 ];
 const typeInfo = (t: RuleType) => TYPES.find((x) => x.type === t)!;
 const CLASSES = ["person", "bicycle", "car", "motorcycle", "bus", "truck"];
@@ -28,6 +29,7 @@ function Shape({ type, points, color, selected, draft }: {
   if (isLine(type) || (draft && points.length < 3)) {
     return <polyline points={d} fill="none" {...common} />;
   }
+  if (type === "privacy_mask") return <polygon points={d} fill="#000" fillOpacity={0.8} {...common} />;
   return <polygon points={d} fill={color} fillOpacity={selected ? 0.28 : 0.16} {...common} />;
 }
 
@@ -84,6 +86,12 @@ function RuleForm({ rule, canEdit, onDeleted }: { rule: Rule; canEdit: boolean; 
             </label>
           </>
         )}
+        {form.type === "privacy_mask" ? (
+          <p className="text-xs text-muted">
+            This area is blacked out the moment each frame arrives: it's never analysed, and it's hidden in snapshots, clips,
+            search images and the Live page. Draw it over anything you mustn't record, like a neighbour's window.
+          </p>
+        ) : (<>
         <div className="grid grid-cols-2 gap-3">
           {(form.type !== "line_crossing" || form.alert) && (<>
           <label className="flex flex-col gap-1">
@@ -179,6 +187,7 @@ function RuleForm({ rule, canEdit, onDeleted }: { rule: Rule; canEdit: boolean; 
             </>
           )}
         </fieldset>
+        </>)}
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} />
           Enabled
@@ -239,7 +248,8 @@ export default function RulesEditor() {
     if (!tool) return;
     const n = (rules.data?.filter((r) => r.type === tool).length ?? 0) + 1;
     create.mutate({ type: tool, name: `${typeInfo(tool).label} ${n}`, points,
-                    severity: tool === "zone_entry" ? "high" : "medium" });
+                    severity: tool === "zone_entry" ? "high" : "medium",
+                    ...(tool === "privacy_mask" ? { classes: ["person"] } : {}) });
     setTool(null);
     setDraft([]);
   };

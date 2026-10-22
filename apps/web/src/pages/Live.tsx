@@ -71,6 +71,10 @@ function Tile({ camera, detections, alert, showBoxes, single }: {
 }) {
   const tile = useRef<HTMLDivElement>(null);
   const webrtc = liveViewUrl(camera.stream_url_masked);
+  // Privacy masks: the worker blacks these out in everything it saves; the raw WebRTC video
+  // doesn't pass through the worker, so they're painted over it here.
+  const rules = useQuery({ queryKey: ["rules", camera.id], queryFn: () => api.rules(camera.id), staleTime: 30_000 });
+  const masks = (rules.data ?? []).filter((r) => r.type === "privacy_mask" && r.enabled);
   const [videoOk, setVideoOk] = useState(false);
   const [previewSeq, setPreviewSeq] = useState(0);
   const [, tick] = useState(0);
@@ -95,6 +99,11 @@ function Tile({ camera, detections, alert, showBoxes, single }: {
           <p className="absolute inset-0 grid place-items-center p-4 text-center text-sm text-white/60">
             {camera.status === "online" ? "Waiting for the first picture…" : "Camera is offline"}
           </p>
+        )}
+        {masks.length > 0 && (
+          <svg viewBox="0 0 1 1" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 size-full" aria-hidden>
+            {masks.map((m) => <polygon key={m.id} points={m.points.map((p) => p.join(",")).join(" ")} fill="#000" />)}
+          </svg>
         )}
         {showBoxes && fresh && (
           <svg viewBox="0 0 1 1" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 size-full">

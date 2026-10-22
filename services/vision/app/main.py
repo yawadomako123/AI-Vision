@@ -64,6 +64,7 @@ def main() -> None:
     log.info("Model %s, input %spx, provider %s", settings.model_path.name, detector.resolution, detector.provider)
 
     api_rules: dict[int, list[Rule]] = {}
+    api_masks: dict[int, list[list[list[float]]]] = {}  # camera id -> privacy mask polygons
     clip_config = ClipConfig(enabled=settings.clips_enabled)
     cameras: dict[int, dict] = {}
     # Runtime settings from the dashboard (Settings page); defaults until the API answers.
@@ -120,14 +121,20 @@ def main() -> None:
             log.warning("Could not fetch rules from API (%s); keeping current rules", exc)
             return False
         parsed: dict[int, list[Rule]] = {}
+        masks: dict[int, list[list[list[float]]]] = {}
         for cam_id, rules in raw.items():
             for r in rules:
+                if r.get("type") == "privacy_mask":
+                    masks.setdefault(cam_id, []).append(r["points"])
+                    continue
                 try:
                     parsed.setdefault(cam_id, []).append(Rule.from_dict({**r, "id": f"rule{r['id']}"}))
                 except (KeyError, ValueError) as exc:
                     log.error("Skipping invalid rule %s: %s", r.get("id"), exc)
         api_rules.clear()
         api_rules.update(parsed)
+        api_masks.clear()
+        api_masks.update(masks)
         return True
 
     def rules_for(cam_id: int) -> list[Rule]:
@@ -135,6 +142,9 @@ def main() -> None:
 
     def apply_rules() -> None:
         for cam in cameras.values():
+            if cam["reader"].mask.set(api_masks.get(cam["id"], [])):
+                log.info("%s privacy masks: %d", cam["key"], len(api_masks.get(cam["id"], [])))
+                cam["tamper"] = TamperDetector()  # the picture changed on purpose: relearn "normal"
             new = rules_for(cam["id"])
             if [vars(r) for r in new] != [vars(r) for r in cam["engine"].rules]:  # don't reset state needlessly
                 cam["engine"].set_rules(new)
@@ -221,7 +231,8 @@ def main() -> None:
                 stats = cam["stats"]
 
                 # Tamper checks run on every camera, resting or not (about once a second).
-                if runtime["tamper"]:
+                # (Skipped when masks hide nearly everything: a black picture isn't tampering.)
+                if runtime["tamper"] and cam["reader"].mask.covered_fraction() < 0.9:
                     change = cam["tamper"].update(frame.image, now)
                     if change:
                         log.warning("%s tamper: %s", cam["key"], change.message)

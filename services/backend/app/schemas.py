@@ -142,7 +142,7 @@ class EventPage(BaseModel):
 
 # --- Rules -------------------------------------------------------------------
 
-RuleType = Literal["zone_entry", "line_crossing", "loitering", "occupancy"]
+RuleType = Literal["zone_entry", "line_crossing", "loitering", "occupancy", "privacy_mask"]
 DetectClass = Literal["person", "bicycle", "car", "motorcycle", "bus", "truck"]
 Point = tuple[float, float]
 

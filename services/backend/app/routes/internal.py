@@ -43,11 +43,11 @@ def worker_cameras(db: Session = Depends(get_db)):
 def worker_rules(db: Session = Depends(get_db)):
     """Enabled rules grouped by camera id. While the system is disarmed only lines are sent, with
     alerts switched off, so they keep counting entries/exits but no rule can fire; camera health
-    alerts are raised independently and keep working."""
+    alerts are raised independently and keep working. Privacy masks always apply."""
     armed = get_settings(db, "system")["armed"]
     query = select(DetectionRule).where(DetectionRule.enabled).order_by(DetectionRule.id)
     if not armed:
-        query = query.where(DetectionRule.type == "line_crossing")
+        query = query.where(DetectionRule.type.in_(["line_crossing", "privacy_mask"]))
     grouped: dict[int, list[RuleOut]] = {}
     for rule in db.scalars(query):
         out = RuleOut.model_validate(rule)

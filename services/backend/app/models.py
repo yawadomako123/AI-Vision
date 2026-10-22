@@ -71,7 +71,7 @@ class DetectionRule(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"), index=True)
-    type: Mapped[str] = mapped_column(String(30))  # zone_entry | line_crossing | loitering | occupancy
+    type: Mapped[str] = mapped_column(String(30))  # zone_entry | line_crossing | loitering | occupancy | privacy_mask
     name: Mapped[str] = mapped_column(String(120))
     points: Mapped[list] = mapped_column(JSON)
     classes: Mapped[list] = mapped_column(JSON, default=lambda: ["person"])

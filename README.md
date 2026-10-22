@@ -56,6 +56,8 @@ Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard 
 
 **Counting accuracy:** extra boxes on the same person (for example one for the whole body and one for the head) are removed automatically. **Settings → Performance → Detection sensitivity** sets how sure the model must be: *High* catches more in poor light but adds false or doubled boxes, *Balanced* is the default, and *Low* only counts very clear people and vehicles. It applies live.
 
+**Privacy masks:** in a camera's rules, *More rule types → Privacy mask* blacks out an area (a neighbour's window, a public street). It's blanked the moment each frame arrives, so it's never analysed and never appears in snapshots, alert clips, search images or the Live page; masks stay on while disarmed. The camera's own stream isn't changed, so check what the camera itself records if it has an SD card.
+
 **Tamper alerts:** each camera learns its normal view and raises a high-severity *Camera tampering* alert (with a snapshot) when it's covered or blacked out, smeared or out of focus, or moved/turned away for 10 s, and a *back to normal* event afterwards. A camera deliberately re-aimed is accepted as the new normal after 5 minutes. Switching the lights off in a room looks the same as covering the lens, so it's reported as "too dark". On by default (Settings → Performance).
 
 **Motion skip:** on cameras where nothing moves and nobody is being tracked, the AI rests after 3 s and only checks one frame every 2 s; any movement wakes it straight away. On by default (Settings → Performance).
@@ -82,6 +84,18 @@ Open **http://127.0.0.1:8000** and sign in. On the very first run the dashboard 
 **Drawing tips:** people are located by their feet (the bottom of their box), so draw zones on the floor. If a person is cut off by the bottom of the image, the middle of the box is used instead.
 
 ## First-time setup
+
+**The easy way (Windows):** install the free tools (Git, Docker Desktop, uv, Node.js, FFmpeg; the script prints the exact `winget` commands for anything missing), then:
+
+```powershell
+git clone https://github.com/yawadomako123/AI-Vision.git
+cd AI-Vision
+.\scripts\setup.ps1
+```
+
+It generates all secrets into `.env`, starts the database and MediaMTX, installs everything, downloads the detection model, prepares the database, and can turn on start-at-login and a cloud-folder copy of the nightly backups. It's safe to run again: it never replaces secrets you already have. Then open http://127.0.0.1:8000 and create your admin account. Add `-WithSearch` for the plain-English search model.
+
+**By hand** (what the script does):
 
 ```powershell
 copy .env.example .env        # then fill in CAMERA_SECRET_KEY / SERVICE_TOKEN (generator commands are in the file)
