@@ -79,6 +79,8 @@ function TranslateMessage(const lpMsg: TMsg): BOOL;
   external 'TranslateMessage@user32.dll stdcall';
 function DispatchMessage(const lpMsg: TMsg): Longint;
   external 'DispatchMessageW@user32.dll stdcall';
+function GetTickCount: DWORD;
+  external 'GetTickCount@kernel32.dll stdcall';
 
 // Keeps the wizard responsive (repaints, the progress bar) while we wait.
 procedure PumpMessages;
