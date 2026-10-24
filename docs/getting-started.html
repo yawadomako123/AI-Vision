@@ -103,26 +103,36 @@
 
 <section id="cameras">
   <h2><span class="num">4</span>Add your cameras</h2>
-  <h3>The easy way: Find cameras</h3>
   <ol>
-    <li>Make sure the camera is powered and connected to the same router or Wi-Fi as this PC.</li>
-    <li>In the dashboard go to <b class="ui">Cameras → Find cameras</b>. It searches your network for about 5 seconds.</li>
-    <li>Click your camera, enter the <b class="ui">Camera username</b> and <b class="ui">Camera password</b> (from the camera's box or its app), and click <b class="ui">Get streams</b>.</li>
-    <li>Pick the stream marked <b class="ui">recommended</b>. It's the lowest resolution, which is the lightest for the AI and is plenty for detection.</li>
-    <li>Give it a <b class="ui">Name</b> (for example <i>Front door</i>), click <b class="ui">Check stream</b>, and when it says <b class="ui">Stream OK</b> click <b class="ui">Add camera</b>.</li>
+    <li>Make sure your cameras are switched on and connected to the <b>same router or Wi-Fi</b> as this PC.</li>
+    <li>In the dashboard go to <b class="ui">Cameras</b> and click <b class="ui">Add cameras</b>. It looks for cameras on your network for a few seconds.</li>
+    <li>Type your cameras' <b class="ui">Username</b> and <b class="ui">Password</b> once and click <b class="ui">Connect</b>. Most people use the same login for every camera; if one is different, click <b class="ui">This one has a different password</b> under it.</li>
+    <li>You'll see a live picture from each camera with a name ready (<i>Hikvision camera 1</i>…). Rename any you like, for example <i>Front door</i>, and untick any you don't want.</li>
+    <li>Click <b class="ui">Add cameras</b>. Done.</li>
   </ol>
-  <div class="tip"><b>Camera not found?</b> Many cameras have ONVIF/RTSP switched off at first. In the camera's own app, turn on <b>ONVIF</b> or <b>RTSP</b>. Tapo and Reolink also need a separate "camera account" (Tapo: <i>Advanced settings → Camera account</i>). Then click <b class="ui">Search again</b>.</div>
+  <div class="tip"><b>Have a recorder (NVR/DVR)?</b> Use the recorder's login: every camera on it is found at once.</div>
+  <h3>Hikvision</h3>
+  <ul>
+    <li>The username is usually <b>admin</b>. Use the password set when the cameras were installed.</li>
+    <li><b>Check the password before clicking Connect.</b> After a few wrong tries, Hikvision cameras lock logins for 30 minutes.</li>
+    <li>A brand-new camera must be activated once: the dashboard shows a link to open it in your browser and create a password.</li>
+  </ul>
+  <h3>Tapo</h3>
+  <ol>
+    <li>Tapo cameras need a "camera account" first. In the <b>Tapo</b> app, tap the camera → <b>⚙ settings</b> → <b>Advanced settings</b> → <b>Camera account</b>, and create a username and password (not your Tapo app login).</li>
+    <li>Back in the dashboard click <b class="ui">Search again</b>, and use that username and password.</li>
+  </ol>
+  <p>The dashboard recognises Tapo and Hikvision cameras that aren't ready yet and shows these steps for them. Battery-powered Tapo cameras can't be used. Neither can Ring, Nest, Blink, Arlo or most Wyze cameras: they only send video to their own cloud.</p>
+  <h3>A phone as a camera</h3>
+  <ol>
+    <li>On the phone, install <b>Larix Broadcaster</b> (free) and connect it to the same Wi-Fi as this PC.</li>
+    <li>In <b class="ui">Add cameras</b>, open <b class="ui">Use a phone as a camera</b> and scan the QR code with the phone (on Android, with Google Lens or any QR scanner). Allow it to open Larix and tap <b>OK</b>.</li>
+    <li>In Larix, tap the round <b>record</b> button, then click <b class="ui">My phone is streaming</b> in the dashboard, <b class="ui">Connect</b>, and <b class="ui">Add camera</b>.</li>
+  </ol>
+  <div class="tip">If the phone can't connect, your Wi-Fi may be set as a public network on the PC. Open <b class="ui">Settings → Network &amp; internet → Wi-Fi</b>, click your network and set <b class="ui">Network profile type</b> to <b class="ui">Private</b>. Phones can only connect to this PC on private networks.</div>
   <h3>Adding a camera by its address</h3>
-  <p>Click <b class="ui">Add camera</b> and enter its stream address, for example <code>rtsp://user:password@192.168.1.50:554/stream2</code>. The camera's manual or its maker's website lists the address. Use the low-resolution "sub stream" if there is one. Passwords are stored encrypted and never shown again.</p>
-  <h3>Using an Android phone as a camera (optional)</h3>
-  <ol>
-    <li>Install <b>Larix Broadcaster</b> (free) on the phone.</li>
-    <li>On the PC, find its address: open Command Prompt, type <code>ipconfig</code>, and note the <b>IPv4 Address</b> (for example <code>192.168.1.20</code>).</li>
-    <li>Open <code>C:\AIVisionEdge\.env</code> in Notepad and copy the value after <code>MEDIAMTX_PUBLISH_PASSWORD=</code>. Don't change anything in that file.</li>
-    <li>In Larix, add a connection: URL <code>rtsp://192.168.1.20:8554/cam1</code> (your PC's address), user <code>publisher</code>, the password you copied. Set video to 640×480, 15 fps.</li>
-    <li>In the dashboard, add a camera with the address <code>rtsp://127.0.0.1:8554/cam1</code>. For a second phone use <code>cam2</code>, and so on.</li>
-  </ol>
-  <div class="tip">If the phone can't connect, your Wi-Fi may be set as a public network on the PC. Open <b class="ui">Settings → Network &amp; internet → Wi-Fi</b>, click your network and set <b class="ui">Network profile type</b> to <b class="ui">Private</b>. Cameras can only connect to this PC on private networks.</div>
+  <p>For other cameras, click <b class="ui">Add by address</b> and enter its stream address, for example <code>rtsp://user:password@192.168.1.50:554/stream2</code> (the camera's manual lists it). Passwords are stored encrypted and never shown again.</p>
+  <p><b>If the router gives a camera a new address</b> (common after a power cut), AI Vision Edge finds it again by itself within a few minutes. There's nothing to do.</p>
   <p>Mount cameras high and angled down. Only film places you're allowed to, and put up a notice where the law requires one.</p>
 </section>
 
@@ -223,8 +233,8 @@
   <table>
     <tr><th>Problem</th><th>Try this</th></tr>
     <tr><td>Dashboard won't open</td><td>Wait a minute after starting the PC. If it still won't open: Start → type <b>Services</b> → find <b class="ui">AI Vision Edge</b> → <b class="ui">Restart</b>.</td></tr>
-    <tr><td>A camera shows offline</td><td>Check its power and network. Open it in the camera's own app. If its address changed, click <b class="ui">Edit</b> on the camera and update it. Tip: give cameras a fixed address in your router.</td></tr>
-    <tr><td>Phone (Larix) can't connect</td><td>Set the Wi-Fi to <b>Private</b> (step 4). Check the PC's address hasn't changed with <code>ipconfig</code>.</td></tr>
+    <tr><td>A camera shows offline</td><td>Check its power and network cable or Wi-Fi. If the router gave it a new address, it reconnects by itself within a few minutes. Still offline after 15 minutes? Open it in the camera's own app to check it works.</td></tr>
+    <tr><td>Phone (Larix) can't connect</td><td>Set the Wi-Fi to <b>Private</b> (step 4). If the PC's address changed, scan the QR code in <b class="ui">Add cameras → Use a phone as a camera</b> again.</td></tr>
     <tr><td>No phone alerts</td><td>Click <b class="ui">Send test</b> in Settings → Phone notifications. Check the topic name matches exactly in the ntfy app, and that the rule's severity matches <b class="ui">Notify for</b>.</td></tr>
     <tr><td>Too many false alarms</td><td>Lower <b class="ui">Detection sensitivity</b>, make zones smaller, or limit rules to night hours.</td></tr>
     <tr><td>PC is slow</td><td>In <b class="ui">Settings → Performance</b>, lower <b class="ui">Analysis speed</b> to 2, keep <b class="ui">Rest the AI when nothing moves</b> on, and use cameras' low-resolution streams.</td></tr>

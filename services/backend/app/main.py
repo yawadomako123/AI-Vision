@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal, get_db
 from app.live import hub, worker_contact
 from app.settings_store import get_settings
+from app.camera_finder import camera_finder
 from app.watchdog import watchdog
 from app.recording import sync_recording
 from app import daily_summary
@@ -58,6 +59,11 @@ def _watchdog_once() -> None:
         cfg = get_settings(db, "notifications")
         watchdog.check(settings.event_storage_path, worker_contact.get("at"), cfg)
         daily_summary.maybe_send(db, notifier, watchdog.status())
+        try:
+            camera_finder.run(db)  # a camera that got a new address from the router: follow it
+        except Exception:  # noqa: BLE001 - never let it stop the checks below
+            log.exception("camera finder failed")
+            db.rollback()
     sync_recording()  # also heals MediaMTX after a restart (it forgets API-added paths)
 
 

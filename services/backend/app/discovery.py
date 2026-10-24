@@ -184,6 +184,20 @@ def local_ipv4() -> list[str]:
                   and ip not in virtual)
 
 
+def primary_ipv4() -> str | None:
+    """The address other devices on the network use to reach this computer (the default route's)."""
+    ips = local_ipv4()
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))  # no packet is sent
+            mine = s.getsockname()[0]
+        if mine in ips:
+            return mine
+    except OSError:
+        pass
+    return ips[0] if ips else None
+
+
 def local_subnets() -> list[ipaddress.IPv4Network]:
     """The /24 around each local address. Real home/office camera networks are almost always /24,
     and capping the size keeps the sweep to a few seconds."""
@@ -230,6 +244,25 @@ def arp_table() -> dict[str, str]:
 
 def vendor_of(mac: str | None) -> str | None:
     return OUI_VENDORS.get(mac.replace(":", "")[:6]) if mac else None
+
+
+def locate_mac(near_ip: str, port: int, mac: str) -> str | None:
+    """Where a device with this hardware address is now, on the /24 around its old address.
+    Knocking on every address fills the ARP table (even where the port is closed)."""
+    net = ipaddress.ip_network(f"{near_ip}/24", strict=False)
+
+    async def knock() -> None:
+        sem = asyncio.Semaphore(200)
+
+        async def one(ip: str) -> None:
+            async with sem:
+                await _port_open(ip, port, 0.6)
+
+        await asyncio.gather(*(one(str(h)) for h in net.hosts()))
+
+    asyncio.run(knock())
+    return next((ip for ip, m in arp_table().items()
+                 if m == mac.upper() and ipaddress.ip_address(ip) in net), None)
 
 
 # --- ONVIF WS-Discovery ---------------------------------------------------------------------
@@ -642,7 +675,7 @@ CHANNEL_PATHS = {  # brands whose recorders number their cameras
 }
 SINGLE_PATHS = {
     "tp-link": "/stream2", "ezviz": "/h264/ch1/sub/av_stream", "reolink": "/h264Preview_01_sub",
-    "uniview": "/media/video2", "axis": "/axis-media/media.amp", "mediamtx": "/cam1",
+    "uniview": "/media/video2", "axis": "/axis-media/media.amp",
 }
 # Unknown brand: the common substream addresses, most likely first.
 GENERIC_PATHS = ["/Streaming/Channels/102", "/stream2", "/cam/realmonitor?channel=1&subtype=1",
@@ -686,6 +719,15 @@ def connect(ip: str, brand: str | None, username: str, password: str, port: int 
         return {"streams": [{"channel": n, "url": url(p)} for n, p in paths], "recorder": len(paths) > 1}
 
     code = -1
+    if brand == "mediamtx":  # phones streaming to this computer: every slot that has video right now
+        slots = [f"/cam{n}" for n in range(1, MAX_CHANNELS + 1)]
+        with ThreadPoolExecutor(8) as pool:
+            codes = list(pool.map(lambda p: rtsp_status(url(p)), slots))
+        live = [(n, p) for n, (p, c) in enumerate(zip(slots, codes), start=1) if c == 200]
+        if live:
+            return {"streams": [{"channel": n, "url": url(p)} for n, p in live], "recorder": False}
+        raise ConnectError("no_stream", "No phone is streaming yet. In Larix, tap the round record button, "
+                           "then try again.")
     if brand in CHANNEL_PATHS:
         template = CHANNEL_PATHS[brand]
         code = rtsp_status(url(template.format(n=1)))

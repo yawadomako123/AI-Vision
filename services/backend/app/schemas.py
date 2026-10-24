@@ -21,6 +21,8 @@ class CameraCreate(BaseModel):
     stream_url: str = Field(max_length=2000)
     location: str | None = Field(default=None, max_length=200)
     enabled: bool = True
+    # From the add-camera wizard: lets the camera be found again if its IP changes.
+    mac: str | None = Field(default=None, pattern=r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
     _url = field_validator("stream_url")(_check_stream_url)
 

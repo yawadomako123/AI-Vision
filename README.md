@@ -119,18 +119,14 @@ npm run build                 # the API serves this build at http://127.0.0.1:80
 
 ## Cameras
 
-**Android phone (free, for testing):** install **Larix Broadcaster** and add a connection:
-- URL: `rtsp://<laptop Wi-Fi IP>:8554/cam1` (find the IP with `ipconfig`)
-- User: `publisher`, password: the `MEDIAMTX_PUBLISH_PASSWORD` value in `.env` (generated at setup; Docker passes it to MediaMTX)
-- Video: 640×480, 15 fps
+**Add cameras (the wizard).** On **Cameras → Add cameras** the dashboard searches the local network (about 3–5 s), asks for the cameras' username and password **once**, shows a live picture of each camera with a ready name, and adds them all with one click. How it finds and connects them (`app/discovery.py`):
+- **Three searches at once:** ONVIF WS-Discovery; an RTSP port sweep that only counts devices actually answering in RTSP; and the maker behind each device's **hardware (MAC) address** (ARP table + the IEEE registry in `app/camera_vendors.py`). The last one finds cameras with video switched off, so the wizard can show brand steps: a **Tapo** camera before its *camera account* is set up (recognised by its ONVIF port 2020), a **Hikvision** camera that isn't activated. Ring, Nest, Blink, Arlo and Wyze devices are named as cloud-only. Virtual and VPN adapters (Hyper-V/WSL, Docker, Tailscale…) are skipped, since Hyper-V switches answer for addresses that don't exist.
+- **Connect:** one RTSP `DESCRIBE` checks the login (Digest or Basic). There is **never more than one wrong attempt per camera**, because Hikvision locks logins for 30 min after a few. On Hikvision/Dahua it then finds every camera of a **recorder (NVR/DVR)** (channels 1–16, substreams). Unknown brands get the common substream addresses, stopping at the first refusal. Errors are plain words ("Wrong camera account: use the one from the Tapo app…").
+- **Address changes:** each camera's hardware address is stored (from the wizard, or learned while it's online). When a camera has been offline for 2 min, the API looks for that address on its network; if it's answering on a new IP with working video, the camera is switched over automatically and the move is in the audit log (`app/camera_finder.py`, at most one search per camera every 10 min).
 
-In the dashboard, add a camera with stream URL `rtsp://127.0.0.1:8554/cam1`. Mount the phone high and angled down, keep it plugged in, and only film places you're allowed to. If the phone can't connect, set the PC's Wi-Fi to a *Private* network (Settings → Network & internet). Native installs allow TCP 8554 on private networks; with Docker, allow Docker Desktop there in Windows Firewall.
+**Android phone as a camera (free):** install **Larix Broadcaster**, then in **Add cameras → Use a phone as a camera** scan the QR code. It's a [Larix Grove](https://softvelum.com/larix/grove/) link with this PC's address, the next free slot (`cam1`, `cam2`…), the publish login and 640×480 at 15 fps, so nothing is typed. Tap record in Larix, then **My phone is streaming → Connect → Add**. Mount the phone high and angled down, keep it plugged in, and only film places you're allowed to. If the phone can't connect, set the PC's Wi-Fi to a *Private* network (native installs allow TCP 8554 on private networks; with Docker, allow Docker Desktop there in Windows Firewall).
 
-**Real IP camera: use Find cameras.** Connect the camera to the same router or Wi-Fi as this computer, then go to **Cameras → Find cameras**. It searches the local network in about 5 seconds, two ways:
-- **ONVIF discovery:** most IP cameras (Hikvision, Dahua, Reolink, Tapo, Uniview, Axis, Amcrest…) answer with their name and model. Enter the camera's username and password and press **Get streams**. The camera itself returns its stream addresses, and the lowest-resolution one is marked *recommended* (lightest to analyse).
-- **RTSP port sweep:** this also finds cameras with ONVIF switched off. When the brand is recognised, it offers ready-made substream and main-stream addresses.
-
-Pick one and the **Add camera** form opens pre-filled. Press **Check stream** to confirm it works before saving. Only private (local) addresses are ever contacted. When the API runs inside Docker (`--profile full`), it can't see your home network, so Find cameras only works with the API running natively (`scripts/run-api.ps1`) or with host networking on Linux. If a camera isn't found, switch on ONVIF/RTSP in the camera's own app (Tapo and Reolink have it off by default and need a separate "camera account").
+Only private (local) addresses are ever contacted. When the API runs inside Docker (`--profile full`), it can't see your home network, so the search only works with the API running natively (the default) or with host networking on Linux.
 
 **Adding by hand:** enter the RTSP URL (prefer the low-resolution substream), for example `rtsp://user:pass@192.168.1.50:554/stream2`. Passwords are encrypted in the database and never shown again. Live view and recording work for it automatically (the camera hub relays it).
 
@@ -328,14 +324,14 @@ Then it removes the temporary camera and rules.
 
 ## Deploying to an edge box
 
-**Recommended on Windows: run natively with the supervisor.** It's lighter than Docker (no 2.9 GB worker image, no VM memory limit), it uses the Intel GPU directly, and **Find cameras** can see your network. Set it up once:
+**Recommended on Windows: run natively with the supervisor.** It's lighter than Docker (no 2.9 GB worker image, no VM memory limit), it uses the Intel GPU directly, and **Add cameras** can search your network. Set it up once:
 1. Follow *First-time setup*.
 2. Run `.\scripts\install-autostart.ps1`.
 3. Turn on Docker Desktop's *Start when you sign in* (Docker only runs the database and MediaMTX).
 
 See *Running unattended*.
 
-**Linux mini PC: everything in Docker.** Use this for a dedicated Linux box. Give the `api` service host networking (`network_mode: host`) if you want **Find cameras**, because from Docker's default network it can't see your home network.
+**Linux mini PC: everything in Docker.** Use this for a dedicated Linux box. Give the `api` service host networking (`network_mode: host`) if you want **Add cameras** to search the network, because from Docker's default network it can't see your home network.
 
 ```powershell
 docker compose --profile full up -d --build    # MediaMTX, PostgreSQL, API + dashboard, worker

@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     # MediaMTX control API + playback server (recording, IP-camera proxies). Empty password = off.
     mediamtx_api_password: str = ""
+    # Phones (Larix) publish with user "publisher" and this password; the dashboard shows it as a QR code.
+    mediamtx_publish_password: str = ""
     mediamtx_api_url: str = "http://127.0.0.1:9997"
     mediamtx_playback_url: str = "http://127.0.0.1:9996"
     # How the vision worker reaches MediaMTX's RTSP server ("mediamtx:8554" inside Docker).

@@ -3,7 +3,7 @@ import copy
 import io
 import time
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import av
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app import discovery
 from app.recording import camera_path, delete_recordings, sync_recording
 from app.audit import audit
+from app.config import settings as app_settings
 from app.auth import current_user, require_admin
 from app.crypto import decrypt, encrypt, mask_url
 from app.db import get_db
@@ -78,7 +79,7 @@ def create_camera(body: CameraCreate, request: Request, background: BackgroundTa
                   admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     camera = Camera(
         name=body.name, location=body.location, enabled=body.enabled,
-        stream_url_encrypted=encrypt(body.stream_url),
+        stream_url_encrypted=encrypt(body.stream_url), mac=body.mac.upper() if body.mac else None,
     )
     db.add(camera)
     audit(db, request, admin, "camera.create", f"camera:{body.name}", stream=mask_url(body.stream_url))
@@ -87,6 +88,36 @@ def create_camera(body: CameraCreate, request: Request, background: BackgroundTa
     hub.broadcast_from_sync("camera", out.model_dump())
     background.add_task(sync_recording)  # set up its MediaMTX proxy/recording now, not in 30 s
     return out
+
+
+@router.get("/phone-setup")
+def phone_setup(request: Request, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Everything a phone needs to stream to this computer as the next free camera (cam1, cam2…),
+    including a Larix Grove link that the dashboard shows as a QR code."""
+    password = app_settings.mediamtx_publish_password
+    ip = discovery.primary_ipv4()
+    if not password or not ip:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Phone cameras aren't available: this computer isn't on a network, or the camera hub "
+                            "has no publish password.")
+    used = set()
+    for cam in db.scalars(select(Camera)):
+        parts = urlsplit(decrypt(cam.stream_url_encrypted))
+        if parts.hostname in ("127.0.0.1", "localhost"):
+            used.add(parts.path.strip("/"))
+    path = next(f"cam{n}" for n in range(1, 1000) if f"cam{n}" not in used)
+    port = app_settings.mediamtx_rtsp.rpartition(":")[2] or "8554"
+    publish_url = f"rtsp://{ip}:{port}/{path}"
+    # https://softvelum.com/larix/grove/ : Larix imports the connection after the user approves.
+    grove = [("conn[][url]", publish_url), ("conn[][name]", f"AI Vision Edge {path}"),
+             ("conn[][user]", "publisher"), ("conn[][pass]", password), ("conn[][overwrite]", "on"),
+             ("conn[][active]", "on"), ("enc[vid][res]", "640x480"), ("enc[vid][fps]", "15"),
+             ("enc[vid][bitrate]", "1000")]
+    audit(db, request, admin, "camera.phone_setup", path=path)
+    db.commit()
+    return {"path": path, "publish_url": publish_url, "username": "publisher", "password": password,
+            "read_url": f"rtsp://127.0.0.1:{port}/{path}",
+            "larix_url": "larix://set/v1?" + "&".join(f"{k}={quote(v, safe='')}" for k, v in grove)}
 
 
 @router.get("/{camera_id}", response_model=CameraOut)
@@ -153,7 +184,8 @@ async def discover_cameras(request: Request, admin: User = Depends(require_admin
             _last_discovery = (time.monotonic(), copy.deepcopy(result))
     added = {urlsplit(decrypt(c.stream_url_encrypted)).hostname for c in db.scalars(select(Camera))}
     for dev in result["devices"]:
-        dev["already_added"] = dev["ip"] in added or (dev["ip"] == "127.0.0.1" and "localhost" in added)
+        # This computer's hub holds many phones (cam1, cam2…): the wizard checks each stream instead.
+        dev["already_added"] = dev["ip"] in added and dev["ip"] != "127.0.0.1"
     audit(db, request, admin, "camera.discover", found=len(result["devices"]))
     db.commit()
     return result

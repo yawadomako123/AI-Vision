@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import qrcode from "qrcode-generator";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 import { api, type FoundDevice } from "../api";
@@ -10,7 +11,7 @@ export interface Picked { name: string; url: string }
 // Cameras that need a setting first (e.g. Tapo's camera account) get step-by-step help instead.
 
 type Status = "idle" | "connecting" | "ok" | "error";
-interface Found { channel: number; url: string; name: string; add: boolean }
+interface Found { channel: number; url: string; name: string; add: boolean; mac: string | null }
 interface Row {
   status: Status;
   ownLogin: boolean;   // a different login from the shared one
@@ -104,6 +105,49 @@ const EzvizSteps = () => (
     <li>Some models need local streaming switched on in the EZVIZ app first.</li>
   </ul>
 );
+
+function QrCode({ text }: { text: string }) {
+  const svg = useMemo(() => {
+    const qr = qrcode(0, "M");
+    qr.addData(text);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  }, [text]);
+  // Always dark on white: phone cameras read that best, whatever the dashboard theme.
+  return <div className="w-56 max-w-full rounded-lg bg-white p-2" role="img" aria-label="QR code for the Larix app"
+              dangerouslySetInnerHTML={{ __html: svg }} />;
+}
+
+/** A phone as a camera: scan one QR code and Larix is set up (no addresses or passwords to type). */
+function PhoneCamera({ onStreaming }: { onStreaming: () => void }) {
+  const setup = useQuery({ queryKey: ["phone-setup"], queryFn: api.phoneSetup, staleTime: Infinity, gcTime: 0 });
+  if (setup.error) return <ErrorNote error={setup.error} />;
+  if (!setup.data) return <p className="text-muted">Preparing…</p>;
+  const s = setup.data;
+  return (
+    <div className="flex flex-wrap items-start gap-4">
+      <QrCode text={s.larix_url} />
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <ol className="list-decimal pl-5">
+          <li>On the phone, install <b>Larix Broadcaster</b> (free, Play Store or App Store).</li>
+          <li>Connect the phone to the <b>same Wi-Fi</b> as this computer.</li>
+          <li>Scan this code with the phone's camera (on Android, Google Lens or any QR scanner) and allow it to open
+            Larix. Tap <b>OK</b> to import the settings.</li>
+          <li>In Larix, tap the round <b>record</b> button to start streaming. Keep the phone plugged in.</li>
+          <li>Then click <b>My phone is streaming</b> below.</li>
+        </ol>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" onClick={onStreaming}>My phone is streaming</Button>
+        </div>
+        <details className="text-xs text-muted">
+          <summary className="cursor-pointer">Set up Larix by hand instead</summary>
+          <p className="mt-1">Connections → + → URL <code className="select-all">{s.publish_url}</code>, user{" "}
+            <code>{s.username}</code>, password <code className="select-all">{s.password}</code>. Video 640×480, 15 fps.</p>
+        </details>
+      </div>
+    </div>
+  );
+}
 
 function brandHelp(d: FoundDevice): ReactNode {
   if (d.brand === "tp-link") return <TapoSteps />;
@@ -201,6 +245,8 @@ export function FindCameras({ onPick, onAdded }: { onPick: (p: Picked) => void; 
   const [user, setUser] = useState("admin");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  // No cameras at all: the phone is the quickest way to start, so show it open.
+  const phoneOpen = !!search.data && usable.length === 0 && hidden.length === 0;
 
   // Fresh rows for each search; everything not yet added is selected.
   useEffect(() => {
@@ -224,9 +270,14 @@ export function FindCameras({ onPick, onAdded }: { onPick: (p: Picked) => void; 
     try {
       const res = await api.connectCamera({ ip: d.ip, brand: d.brand, port: d.rtsp_ports[0] ?? 554,
                                             onvif_url: d.onvif_url, ...login });
-      if (res.ok) {
+      // Skip streams that are already cameras (e.g. a phone added earlier, or one camera of a recorder).
+      const have = new Set((existing.data ?? []).map((c) => c.stream_url_masked));
+      const fresh = res.ok ? res.streams.filter((s) => !have.has(s.url.replace(/\/\/([^:@/]+):[^@/]*@/, "//$1:***@"))) : [];
+      if (res.ok && fresh.length === 0) {
+        patch(d.ip, { status: "error", code: "already_added", message: "Everything here is already added." });
+      } else if (res.ok) {
         patch(d.ip, { status: "ok", recorder: res.recorder,
-                      streams: res.streams.map((s) => ({ ...s, name: "", add: true })) });
+                      streams: fresh.map((s) => ({ ...s, name: "", add: true, mac: d.mac })) });
       } else {
         patch(d.ip, { status: "error", code: res.code, message: res.message, user: login.username, password: login.password });
       }
@@ -264,7 +315,7 @@ export function FindCameras({ onPick, onAdded }: { onPick: (p: Picked) => void; 
   const add = useMutation({
     mutationFn: async () => {
       for (const s of toAdd) {
-        await api.createCamera({ name: s.name.trim(), stream_url: s.url });
+        await api.createCamera({ name: s.name.trim(), stream_url: s.url, mac: s.mac });
         // Untick each one as it's added, so retrying after an error (e.g. a duplicate name) can't add it twice.
         setRows((all) => Object.fromEntries(Object.entries(all).map(([ip, r]) =>
           [ip, { ...r, streams: r.streams.map((x) => (x.url === s.url ? { ...x, add: false } : x)) }])));
@@ -351,6 +402,12 @@ export function FindCameras({ onPick, onAdded }: { onPick: (p: Picked) => void; 
               send video to {d.brand_name}'s own cloud, not to other apps.</p>
           ))}
         </div>
+      )}
+
+      {search.data && (
+        <Help title="Use a phone as a camera" open={phoneOpen}>
+          <PhoneCamera onStreaming={() => search.mutate()} />
+        </Help>
       )}
 
       {search.data && (

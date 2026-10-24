@@ -51,6 +51,8 @@ class Camera(Base):
     infer_fps: Mapped[float | None] = mapped_column(Float)
     # Phone notifications from this camera are silenced until then (detection keeps running).
     notify_muted_until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    # Hardware address: finds the camera again when the router gives it a new IP (app/camera_finder.py).
+    mac: Mapped[str | None] = mapped_column(String(17), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, onupdate=utc_now)
 

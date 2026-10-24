@@ -250,3 +250,30 @@ Configuration for interface "vEthernet (Default Switch)"
     assert [ip for ip, n in adapters.items() if discovery.VIRTUAL_ADAPTER.search(n)] == ["100.115.129.106", "172.22.48.1"]
     linux = "2: eth0    inet 192.168.1.5/24 brd 192.168.1.255 scope global eth0\n3: docker0    inet 172.17.0.1/16 scope global docker0\n"
     assert {ip for ip, n in discovery.parse_adapters(linux).items() if discovery.VIRTUAL_ADAPTER.search(n)} == {"172.17.0.1"}
+
+
+def test_phone_setup_gives_the_next_free_slot_and_a_larix_link(client, operator, monkeypatch):
+    from urllib.parse import unquote
+
+    from app.routes import cameras as routes
+    monkeypatch.setattr(routes.app_settings, "mediamtx_publish_password", "p@ss/word")
+    monkeypatch.setattr(routes.discovery, "primary_ipv4", lambda: "192.168.1.20")
+    client.post("/api/cameras", json={"name": "Phone 1", "stream_url": "rtsp://127.0.0.1:8554/cam1"})
+    r = client.get("/api/cameras/phone-setup")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["path"] == "cam2" and body["publish_url"] == "rtsp://192.168.1.20:8554/cam2"
+    assert body["read_url"] == "rtsp://127.0.0.1:8554/cam2" and body["username"] == "publisher"
+    link = body["larix_url"]
+    assert link.startswith("larix://set/v1?conn[][url]=rtsp%3A%2F%2F192.168.1.20%3A8554%2Fcam2&")
+    assert "conn[][pass]=p%40ss%2Fword" in link and unquote(link).count("p@ss/word") == 1
+    assert "enc[vid][res]=640x480" in link
+    assert operator.get("/api/cameras/phone-setup").status_code == 403
+
+
+def test_phone_setup_without_a_network_explains(client, monkeypatch):
+    from app.routes import cameras as routes
+    monkeypatch.setattr(routes.app_settings, "mediamtx_publish_password", "x")
+    monkeypatch.setattr(routes.discovery, "primary_ipv4", lambda: None)
+    r = client.get("/api/cameras/phone-setup")
+    assert r.status_code == 409 and "network" in r.json()["detail"]
