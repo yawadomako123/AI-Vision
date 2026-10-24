@@ -46,14 +46,16 @@ function Ask([string]$question) {
     $a = Read-Host "   ?   $question [Y/n]"
     return ($a -eq "" -or $a -match "^[Yy]")
 }
-function Run([string]$what, [string]$dir, [string]$command) {
+function Run([string]$what, [string]$dir, [string]$command, [int]$tries = 1) {
     # Through cmd: Windows PowerShell turns a native program's stderr into errors.
     Info $what
-    $out = cmd.exe /c "cd /d `"$dir`" && $command 2>&1"
-    if ($LASTEXITCODE -ne 0) {
+    for ($try = 1; $try -le $tries; $try++) {
+        if ($try -gt 1) { Start-Sleep 10; Info "Retrying $what, attempt $try of $tries" }
+        $out = cmd.exe /c "cd /d `"$dir`" && $command 2>&1"
+        if ($LASTEXITCODE -eq 0) { return }
         $out | Select-Object -Last 15 | ForEach-Object { Write-Host "       $_" }
-        Fail "$what failed (see above)"
     }
+    Fail "$what failed (see above)"
 }
 
 # --- 0. folder location --------------------------------------------------------------------------
@@ -193,8 +195,13 @@ if (-not $SkipServices -and -not $native) {
 
 # --- 4. environments and dashboard --------------------------------------------------------------
 Step "Installing (this takes a few minutes the first time)"
-Run "API environment (uv sync)" (Join-Path $Root "services\backend") "uv sync"
-Run "Vision worker environment (uv sync)" (Join-Path $Root "services\vision") "uv sync"
+# Slow or unreliable connections: fewer parallel downloads, a long timeout per file, and retries.
+# A retry keeps everything already downloaded (uv's cache), so it continues where it stopped.
+if (-not $env:UV_HTTP_TIMEOUT) { $env:UV_HTTP_TIMEOUT = "300" }
+if (-not $env:UV_HTTP_RETRIES) { $env:UV_HTTP_RETRIES = "10" }
+if (-not $env:UV_CONCURRENT_DOWNLOADS) { $env:UV_CONCURRENT_DOWNLOADS = "4" }
+Run "API environment (uv sync)" (Join-Path $Root "services\backend") "uv sync" 3
+Run "Vision worker environment (uv sync)" (Join-Path $Root "services\vision") "uv sync" 3
 if ($Bundled -and (Test-Path (Join-Path $Root "apps\web\dist\index.html"))) {
     Info "dashboard: pre-built"
 } else {

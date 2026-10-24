@@ -70,6 +70,7 @@ $watcher = Start-Job -ArgumentList $Root, $progressFile -ScriptBlock {
     $expectedMB = 800  # Python + both environments, unpacked (measured; the two share files via hard links)
     $samples = New-Object System.Collections.Generic.List[object]
     $tick = 0
+    $bestMB = 0  # partly downloaded files are discarded on a retry; never show the count going back
     while ($true) {
         $bytes = 0
         foreach ($d in $dirs) {
@@ -77,10 +78,11 @@ $watcher = Start-Job -ArgumentList $Root, $progressFile -ScriptBlock {
                 foreach ($f in ([IO.DirectoryInfo]$d).EnumerateFiles("*", "AllDirectories")) { $bytes += $f.Length }
             }
         }
-        $mb = [math]::Round($bytes / 1MB)
+        $mb = [math]::Max($bestMB, [math]::Round($bytes / 1MB))
+        $bestMB = $mb
         $now = Get-Date
         $samples.Add(@($now, $mb))
-        while ($samples.Count -gt 2 -and ($now - $samples[0][0]).TotalSeconds -gt 30) { $samples.RemoveAt(0) }
+        while ($samples.Count -gt 2 -and ($now - $samples[0][0]).TotalSeconds -gt 60) { $samples.RemoveAt(0) }
         $secs = ($now - $samples[0][0]).TotalSeconds
         $rate = if ($secs -gt 0) { ($mb - $samples[0][1]) / $secs } else { 0 }
 
@@ -95,7 +97,8 @@ $watcher = Start-Job -ArgumentList $Root, $progressFile -ScriptBlock {
                     $text += (" ({0:N1} MB/s" -f $rate)
                     if ($mb -lt $expectedMB) { $text += ", about $([math]::Max(1, [math]::Ceiling(($expectedMB - $mb) / $rate / 60))) min left" }
                     $text += ")"
-                } elseif ($samples.Count -gt 5) { $text += " (checking and linking files)" }
+                } elseif ($samples.Count -gt 5) { $text += " (waiting for the connection, or unpacking)" }
+                if ($last -match 'Retrying .*attempt (\d+) of (\d+)') { $text += " - connection problem, retry $($Matches[1]) of $($Matches[2])" }
             }
             'dashboard|installed|AI models|detection model|search model' { $pct, $text = 92, "Checking the AI model" }
             'Database|Preparing tables' { $pct, $text = 95, "Preparing the database" }
