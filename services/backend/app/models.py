@@ -105,6 +105,9 @@ class Sighting(Base):
     confidence: Mapped[float] = mapped_column(Float)
     path: Mapped[list] = mapped_column(JSON, default=list)
     embedding: Mapped[bytes] = mapped_column(LargeBinary)  # float16, L2-normalised
+    # Vehicles only (app/vehicle_attrs.py); None = not a vehicle, or unsure (e.g. lights at night).
+    color: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    vehicle_type: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     thumbnail_path: Mapped[str] = mapped_column(Text)
     context_path: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

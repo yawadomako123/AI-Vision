@@ -28,6 +28,15 @@ function Relevance({ score }: { score: number }) {
   );
 }
 
+const VEHICLE_COLORS = ["white", "black", "silver", "grey", "red", "blue", "green", "yellow", "orange", "brown"];
+const VEHICLE_TYPES = ["saloon", "hatchback", "SUV", "pickup", "van", "minibus", "truck", "bus", "motorcycle", "bicycle"];
+
+/** "white SUV", "red car", "car" (colour/type only when the system was confident). */
+function vehicleLabel(s: Sighting): string | null {
+  if (s.object_class === "person") return null;
+  return [s.color, s.vehicle_type ?? s.object_class].filter(Boolean).join(" ");
+}
+
 function SightingCard({ s, onOpen }: { s: Sighting; onOpen: () => void }) {
   return (
     <button type="button" onClick={onOpen}
@@ -35,7 +44,7 @@ function SightingCard({ s, onOpen }: { s: Sighting; onOpen: () => void }) {
       <img src={s.thumbnail_url} alt={`${s.object_class} seen on ${s.camera_name}`} loading="lazy"
            className="h-44 w-full bg-black object-contain" />
       <div className="flex flex-col gap-1 p-3 text-sm">
-        <span className="font-medium capitalize">{s.object_class} · {s.camera_name}</span>
+        <span className="font-medium"><span className="capitalize">{vehicleLabel(s) ?? s.object_class}</span> · {s.camera_name}</span>
         <span className="text-xs text-muted" title={formatDateTime(s.first_seen)}>
           {timeAgo(s.first_seen)} · in view {duration(s.duration_seconds)}
         </span>
@@ -73,7 +82,7 @@ function SightingDialog({ id, hours, onOpen }: { id: number; hours: number; onOp
             <dt className="text-muted">Camera</dt><dd>{d.camera_name}</dd>
             <dt className="text-muted">From</dt><dd className="tabular">{formatDateTime(d.first_seen)}</dd>
             <dt className="text-muted">In view</dt><dd>{duration(d.duration_seconds)}</dd>
-            <dt className="text-muted">Type</dt><dd className="capitalize">{d.object_class} ({Math.round(d.confidence * 100)}%)</dd>
+            <dt className="text-muted">Type</dt><dd className="capitalize">{vehicleLabel(d) ?? d.object_class} ({Math.round(d.confidence * 100)}%)</dd>
           </dl>
           <Link to={`/playback?camera=${d.camera_id}&t=${new Date(new Date(d.first_seen).getTime() - 5_000).toISOString()}`}
                 className="text-sm font-medium text-accent">
@@ -122,6 +131,8 @@ export default function Search() {
   const hours = Number(params.get("hours") ?? 168);
   const cameraId = params.get("camera_id") ?? "";
   const objectClass = params.get("type") ?? "";
+  const color = objectClass === "vehicle" ? params.get("color") ?? "" : "";
+  const vehicleType = objectClass === "vehicle" ? params.get("vtype") ?? "" : "";
   const openId = params.get("open");
   const [text, setText] = useState(q);
   useEffect(() => setText(q), [q]);
@@ -129,8 +140,9 @@ export default function Search() {
   const status = useQuery({ queryKey: ["search-status"], queryFn: api.searchStatus, staleTime: 60_000 });
   const cameras = useQuery({ queryKey: ["cameras"], queryFn: api.cameras });
   const results = useQuery({
-    queryKey: ["search", q, hours, cameraId, objectClass],
-    queryFn: () => api.search({ q, hours, camera_id: cameraId || undefined, object_class: objectClass || undefined }),
+    queryKey: ["search", q, hours, cameraId, objectClass, color, vehicleType],
+    queryFn: () => api.search({ q, hours, camera_id: cameraId || undefined, object_class: objectClass || undefined,
+                                color: color || undefined, vehicle_type: vehicleType || undefined }),
     placeholderData: keepPreviousData,
     enabled: status.data?.enabled === true && (status.data.available || !q),
   });
@@ -175,6 +187,18 @@ export default function Search() {
               <option value="person">People</option>
               <option value="vehicle">Vehicles</option>
             </select>
+            {objectClass === "vehicle" && (
+              <>
+                <select aria-label="Colour" className={selectCls} value={color} onChange={(e) => update({ color: e.target.value || null })}>
+                  <option value="">Any colour</option>
+                  {VEHICLE_COLORS.map((c) => <option key={c} value={c} className="capitalize">{c}</option>)}
+                </select>
+                <select aria-label="Vehicle type" className={selectCls} value={vehicleType} onChange={(e) => update({ vtype: e.target.value || null })}>
+                  <option value="">Any type</option>
+                  {VEHICLE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </>
+            )}
           </span>
         </div>
       </form>

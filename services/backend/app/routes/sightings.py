@@ -1,11 +1,14 @@
 import base64
 import binascii
+import io
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
+from PIL import Image
 from sqlalchemy.orm import Session, joinedload
 
 from app.audit import audit
@@ -15,13 +18,16 @@ from app.db import get_db
 from app.models import Camera, Event, Sighting, User
 from app.routes.internal import require_service_token
 from app.schemas import SightingDetail, SightingIn, SightingOut
-from app.settings_store import get_settings
 from app.search_engine import (
     SearchUnavailable, TextEncoder, decode_embedding, image_relevance, rank, text_relevance,
 )
+from app.settings_store import get_settings
+from app.vehicle_attrs import VEHICLE_CLASSES, VehicleAttributes
 
 router = APIRouter(tags=["search"])
 text_encoder = TextEncoder(settings.search_model_dir)
+vehicle_attrs = VehicleAttributes(text_encoder)
+log = logging.getLogger(__name__)
 MEDIA_PREFIX = "/media/events/"
 
 
@@ -31,7 +37,24 @@ def _out(s: Sighting, score: float | None = None) -> SightingOut:
         object_class=s.object_class, first_seen=s.first_seen, last_seen=s.last_seen,
         duration_seconds=round((s.last_seen - s.first_seen).total_seconds(), 1), confidence=s.confidence,
         thumbnail_url=MEDIA_PREFIX + s.thumbnail_path, context_url=MEDIA_PREFIX + s.context_path, score=score,
+        color=s.color, vehicle_type=s.vehicle_type,
     )
+
+
+def describe_vehicle(s: Sighting, thumbnail_jpeg: bytes | None) -> None:
+    """Fill in colour and body type for a vehicle sighting. Never fails the caller."""
+    if s.object_class not in VEHICLE_CLASSES or not vehicle_attrs.available:
+        return
+    rgb = None
+    try:  # pixels for the poor-light check; without them colour/type still work
+        rgb = np.asarray(Image.open(io.BytesIO(thumbnail_jpeg)).convert("RGB")) if thumbnail_jpeg else None
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        r = vehicle_attrs.classify(decode_embedding(s.embedding), s.object_class, rgb)
+        s.color, s.vehicle_type = r.get("color"), r.get("vehicle_type")
+    except Exception:  # noqa: BLE001 - a description is a bonus; the sighting itself matters
+        log.exception("vehicle description failed for a sighting")
 
 
 def _save_jpeg(b64: str, rel: str) -> None:
@@ -64,12 +87,14 @@ def ingest_sighting(body: SightingIn, db: Session = Depends(get_db)):
                  first_seen=body.first_seen, last_seen=body.last_seen, confidence=body.confidence,
                  path=[list(p) for p in body.path], embedding=emb,
                  thumbnail_path=key + "_t.jpg", context_path=key + "_c.jpg")
+    describe_vehicle(s, base64.b64decode(body.thumbnail))
     db.add(s)
     db.commit()
     return {"id": s.id}
 
 
-def _filters(camera_id: int | None, object_class: str | None, hours: int) -> list:
+def _filters(camera_id: int | None, object_class: str | None, hours: int,
+             color: str | None = None, vehicle_type: str | None = None) -> list:
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
     f = [Sighting.first_seen >= since]
     if camera_id:
@@ -78,6 +103,10 @@ def _filters(camera_id: int | None, object_class: str | None, hours: int) -> lis
         f.append(Sighting.object_class.in_(["car", "truck", "bus", "motorcycle", "bicycle"]))
     elif object_class:
         f.append(Sighting.object_class == object_class)
+    if color:
+        f.append(Sighting.color == color)
+    if vehicle_type:
+        f.append(Sighting.vehicle_type == vehicle_type)
     return f
 
 
@@ -89,13 +118,16 @@ def search(
     object_class: str | None = Query(default=None, max_length=30),
     hours: int = Query(default=24 * 7, ge=1, le=24 * 365),
     limit: int = Query(default=24, ge=1, le=100),
+    color: str | None = Query(default=None, max_length=20),
+    vehicle_type: str | None = Query(default=None, max_length=20),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Plain-English search ("person in a white hoodie"). With no query: most recent sightings."""
+    """Plain-English search ("person in a white hoodie"). With no query: most recent sightings.
+    color / vehicle_type narrow vehicle results (e.g. red pickups)."""
     if not get_settings(db)["search_enabled"]:
         raise HTTPException(status.HTTP_409_CONFLICT, "Search is switched off. An admin can turn it on in Settings.")
-    filters = _filters(camera_id, object_class, hours)
+    filters = _filters(camera_id, object_class, hours, color, vehicle_type)
     if not q.strip():
         rows = db.scalars(select(Sighting).options(joinedload(Sighting.camera)).where(*filters)
                           .order_by(Sighting.first_seen.desc()).limit(limit)).all()

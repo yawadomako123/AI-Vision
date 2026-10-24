@@ -159,6 +159,8 @@ export interface Sighting {
   thumbnail_url: string;
   context_url: string;
   score: number | null;
+  color: string | null; // vehicles; null = not a vehicle or unsure (e.g. lights at night)
+  vehicle_type: string | null;
 }
 
 export interface SightingDetail extends Sighting {
@@ -365,7 +367,7 @@ export const api = {
   deleteRule: (id: number) => request<void>(`/api/rules/${id}`, { method: "DELETE" }),
   frameUrl: (cameraId: number) => `/api/cameras/${cameraId}/frame?t=${Date.now()}`,
 
-  search: (p: { q?: string; camera_id?: string; object_class?: string; hours?: number }) =>
+  search: (p: { q?: string; camera_id?: string; object_class?: string; hours?: number; color?: string; vehicle_type?: string }) =>
     request<Sighting[]>(`/api/search${query({ ...p })}`),
   searchStatus: () => request<{ available: boolean; enabled: boolean }>("/api/search/status"),
   sighting: (id: number) => request<SightingDetail>(`/api/sightings/${id}`),

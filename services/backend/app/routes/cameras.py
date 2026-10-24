@@ -42,6 +42,10 @@ def _commit(db: Session) -> None:
 
 
 def _open(url: str):
+    if url.lower().startswith(("http://", "https://")):
+        # HLS web streams load a playlist and a first segment before any frame: allow longer.
+        # Start a few segments behind live, like the worker (much faster to the first frame).
+        return av.open(url, options={"live_start_index": "-6"}, timeout=(30.0, 30.0))
     return av.open(url, options={"rtsp_transport": "tcp"}, timeout=(5.0, 5.0))
 
 

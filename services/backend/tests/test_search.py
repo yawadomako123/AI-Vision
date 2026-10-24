@@ -148,3 +148,61 @@ def test_tokenizer_matches_official_when_model_present():
     tok = SiglipTokenizer(Path(settings.search_model_dir) / "spiece.model", meta["eos_id"], meta["pad_id"], meta["max_length"])
     for case in json.loads(parity.read_text(encoding="utf-8")):
         assert tok.encode(case["text"]) == case["ids"], case["text"]
+
+
+class FakeAttrs:
+    available = True
+
+    def __init__(self, result=None, boom=False):
+        self.result, self.boom, self.calls = result or {}, boom, []
+
+    def classify(self, embedding, object_class, rgb=None):
+        self.calls.append((object_class, None if rgb is None else rgb.shape))
+        if self.boom:
+            raise RuntimeError("model broke")
+        return self.result
+
+
+def test_vehicles_get_colour_and_type_and_can_be_filtered(client, camera, monkeypatch):
+    from app.routes import sightings
+    fake = FakeAttrs({"color": "red", "vehicle_type": "pickup"})
+    monkeypatch.setattr(sightings, "vehicle_attrs", fake)
+    post(client, camera["id"], vec(0), cls="car", track=1)
+    post(client, camera["id"], vec(1), cls="person", track=2)
+    assert [c[0] for c in fake.calls] == ["car"]  # people are never described
+    # (the test JPEG is a stub that can't be decoded: colour/type must still be attempted)
+    fake.result = {"color": "white", "vehicle_type": "saloon"}
+    post(client, camera["id"], vec(2), cls="truck", track=3)
+    all_vehicles = client.get("/api/search", params={"object_class": "vehicle"}).json()
+    assert {(s["color"], s["vehicle_type"]) for s in all_vehicles} == {("red", "pickup"), ("white", "saloon")}
+    red = client.get("/api/search", params={"object_class": "vehicle", "color": "red"}).json()
+    assert [(s["color"], s["vehicle_type"]) for s in red] == [("red", "pickup")]
+    assert client.get("/api/search", params={"vehicle_type": "saloon"}).json()[0]["color"] == "white"
+
+
+def test_a_failing_description_never_loses_the_sighting(client, camera, monkeypatch):
+    from app.routes import sightings
+    monkeypatch.setattr(sightings, "vehicle_attrs", FakeAttrs(boom=True))
+    sid = post(client, camera["id"], vec(3), cls="car", track=9)
+    s = client.get(f"/api/sightings/{sid}").json()
+    assert s["color"] is None and s["vehicle_type"] is None
+
+
+def test_cut_out_pixels_reach_the_light_check(client, camera, monkeypatch, tmp_path):
+    import io
+
+    from PIL import Image
+
+    from app.routes import sightings
+    fake = FakeAttrs({"color": "blue", "vehicle_type": "van"})
+    monkeypatch.setattr(sightings, "vehicle_attrs", fake)
+    buf = io.BytesIO()
+    Image.new("RGB", (40, 30), (20, 40, 200)).save(buf, "JPEG")
+    real = base64.b64encode(buf.getvalue()).decode()
+    first = datetime.now(timezone.utc) - timedelta(minutes=1)
+    r = client.post("/api/internal/sightings", headers=WORKER, json={
+        "camera_id": camera["id"], "track_id": 4, "object_class": "car", "first_seen": first.isoformat(),
+        "last_seen": (first + timedelta(seconds=5)).isoformat(), "confidence": 0.9, "path": [],
+        "embedding": b64(vec(4)), "thumbnail": real, "context": real})
+    assert r.status_code == 201
+    assert fake.calls == [("car", (30, 40, 3))]

@@ -359,6 +359,8 @@ class SightingOut(BaseModel):
     thumbnail_url: str
     context_url: str
     score: float | None = None  # 0..1 relevance for search / similarity results
+    color: str | None = None  # vehicles: e.g. "white" (None = unsure)
+    vehicle_type: str | None = None  # vehicles: saloon, SUV, pickup, van, minibus, truck, bus, motorcycle...
 
 
 class SightingDetail(SightingOut):
