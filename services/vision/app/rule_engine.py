@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 
 RULE_TYPES = {"zone_entry", "line_crossing", "loitering", "occupancy"}
 ANCHOR = (sv.Position.BOTTOM_CENTER,)
+LOITER_GRACE = 5.0  # seconds someone may be missed (or step out) without their loitering timer restarting
 DEFAULT_SEVERITY = {"zone_entry": "high", "line_crossing": "medium", "loitering": "medium", "occupancy": "medium"}
 
 
@@ -124,6 +125,7 @@ class _RuleState:
             self.zone = sv.PolygonZone(pts, triggering_anchors=ANCHOR)
         self.inside: set[int] = set()  # track ids inside the zone on the previous update
         self.entered_at: dict[int, float] = {}  # loitering: track id -> time it entered
+        self.last_inside: dict[int, float] = {}  # loitering: track id -> last time seen inside
         self.loiter_reported: set[int] = set()
         self.over_capacity = False
         self.last_fired: dict[object, float] = {}  # cooldown key -> time
@@ -131,6 +133,7 @@ class _RuleState:
     def reset(self) -> None:
         self.inside.clear()
         self.entered_at.clear()
+        self.last_inside.clear()
         self.loiter_reported.clear()
         self.over_capacity = False
 
@@ -207,6 +210,12 @@ class RuleEngine:
         return hits
 
     def _line_crossing(self, state, dets, pos, names, now):
+        # Geometry per raw tracker track: a person recognised on their way back (same number,
+        # new track) mustn't "cross" between where they left and where they came back.
+        raw = dets.data.get("raw_track") if dets.data else None
+        if raw is not None:
+            pos = sv.Detections(xyxy=pos.xyxy, confidence=pos.confidence, class_id=pos.class_id,
+                                tracker_id=np.asarray(raw))
         crossed_in, crossed_out = state.line.trigger(pos)  # also ages crossing history when empty
         hits = []
         for i in range(len(dets)):
@@ -235,10 +244,14 @@ class RuleEngine:
                 if state.cooled_down(tid, now):
                     state.loiter_reported.add(tid)
                     hits.append(self._hit(state, "loitering", now, dets, names, i, dwell_seconds=round(dwell, 1)))
-        # Leaving the zone resets the timer for that track.
+        # Leaving the zone resets the timer, but not a brief miss (the detector skipping a frame,
+        # someone walking past in front): only once they've been gone LOITER_GRACE seconds.
+        for tid in current:
+            state.last_inside[tid] = now
         for tid in list(state.entered_at):
-            if tid not in current:
+            if tid not in current and now - state.last_inside.get(tid, now) > LOITER_GRACE:
                 del state.entered_at[tid]
+                state.last_inside.pop(tid, None)
                 state.loiter_reported.discard(tid)
         return hits
 

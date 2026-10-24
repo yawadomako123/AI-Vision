@@ -30,6 +30,7 @@ from app.config import REPO_ROOT, settings
 from app.detector import COCO_CLASSES, Detector
 from app.event_publisher import EventPublisher
 from app.frame_reader import FrameReader
+from app.identity import Identities, ReidModel
 from app.live import LivePublisher, live_payload
 from app.motion import MotionGate
 from app.tamper import TamperDetector
@@ -63,6 +64,7 @@ def main() -> None:
         settings.model_path, settings.inference_device, settings.detection_confidence, settings.classes
     )
     log.info("Model %s, input %spx, provider %s", settings.model_path.name, detector.resolution, detector.provider)
+    reid = load_reid()
 
     api_rules: dict[int, list[Rule]] = {}
     api_masks: dict[int, list[list[list[float]]]] = {}  # camera id -> privacy mask polygons
@@ -87,6 +89,7 @@ def main() -> None:
             runtime["fps"] = fps
             for cam in cameras.values():  # tracker timing depends on the analysis rate
                 cam["tracker"] = new_tracker(fps)
+                cam["identities"].tracker_reset()
             log.info("Analysis speed: %.1f frames/s per camera", fps)
         runtime["live"] = {int(c) for c in cfg.get("live_cameras", [])}
         runtime["tamper"] = bool(cfg.get("tamper_alerts", True))
@@ -186,7 +189,7 @@ def main() -> None:
                 log.info("cam%d stopped", cam_id)
         for cam_id, source in desired.items():
             if cam_id not in cameras:
-                cameras[cam_id] = start_camera(cam_id, source, rules_for(cam_id), clip_config, runtime["fps"])
+                cameras[cam_id] = start_camera(cam_id, source, rules_for(cam_id), clip_config, runtime["fps"], reid)
                 cameras[cam_id]["sightings"] = SightingCollector(cam_id, api.send_sighting if api else None,
                                                                  embedder if api else None)
                 cameras[cam_id]["sightings"].plate_reader = plate_reader if api else None
@@ -261,15 +264,16 @@ def main() -> None:
 
                 t0 = time.perf_counter()
                 detections = cam["tracker"].update_with_detections(detector(frame.image))
+                # Derived from class_id: the tracker drops `data` when nothing is detected.
+                names = [COCO_CLASSES.get(int(c), str(c)) for c in detections.class_id]
+                # Stable small numbers, and returning people recognised (see app/identity.py).
+                detections = cam["identities"].assign(detections, names, frame.image, frame.captured_at)
                 infer_ms = (time.perf_counter() - t0) * 1000
 
                 h, w = frame.image.shape[:2]
                 engine = cam["engine"]
                 for hit in engine.update(detections, w, h, frame.captured_at):
                     emit(cam, hit, frame.image)
-
-                # Derived from class_id: the tracker drops `data` when nothing is detected.
-                names = [COCO_CLASSES.get(int(c), str(c)) for c in detections.class_id]
                 cam["sightings"].update(detections, names, object_positions(detections, h).xyxy[:, :2],
                                         frame.image, frame.captured_at)
                 if live and cam["id"] in runtime["live"]:
@@ -336,14 +340,36 @@ def main() -> None:
             cv2.destroyAllWindows()
 
 
+TRACK_MEMORY_SECONDS = 3.0  # someone hidden or missed for less than this keeps their track (longer let
+#                            the tracker swap people who cross paths; scripts/reid_eval.py)
+
+
 def new_tracker(fps: float) -> sv.ByteTrack:
-    """frame_rate = our sampling rate, so lost_track_buffer is measured in sampled frames.
+    """ByteTrack keeps a lost track for frame_rate / 30 * lost_track_buffer analysed frames; with
+    frame_rate = our sampling rate that is TRACK_MEMORY_SECONDS (the default was ~1 s at 3 fps, so
+    walking behind someone gave them a new number).
     A person only counts (and can trigger rules) once seen in 2 analysed frames in a row: that
     filters one-frame ghost boxes, which made 2 people show as 3 or 4, for ~0.3 s of delay."""
-    return sv.ByteTrack(frame_rate=max(1, round(fps)), minimum_consecutive_frames=2)
+    return sv.ByteTrack(frame_rate=max(1, round(fps)), lost_track_buffer=round(30 * TRACK_MEMORY_SECONDS),
+                        minimum_consecutive_frames=2)
 
 
-def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipConfig, fps: float) -> dict:
+def load_reid() -> ReidModel | None:
+    """The re-identification model if installed (optional: without it numbers still stay small)."""
+    if not (settings.reid_model_dir / "person-reidentification-retail-0288.xml").exists():
+        log.info("Re-identification model not installed: returning people get a new number")
+        return None
+    try:
+        model = ReidModel(settings.reid_model_dir, settings.reid_device)
+        log.info("Re-identification on (%s): returning people keep their number", model.provider)
+        return model
+    except Exception:  # noqa: BLE001 - never let it stop detection
+        log.exception("Could not load the re-identification model")
+        return None
+
+
+def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipConfig, fps: float,
+                 reid: ReidModel | None = None) -> dict:
     key = f"cam{cam_id}"
     log.info("%s starting (%d rules)", key, len(rules))  # never log the source: it may contain a password
     clips = ClipRecorder(clip_config)
@@ -356,6 +382,7 @@ def start_camera(cam_id: int, source: str, rules: list[Rule], clip_config: ClipC
         "clips": clips,
         "reader": reader.start(),
         "tracker": new_tracker(fps),
+        "identities": Identities(reid),
         "engine": RuleEngine(rules),
         "counter": MinuteCounter(cam_id),
         "lines": LineCounter(cam_id),

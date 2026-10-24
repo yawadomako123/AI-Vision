@@ -72,6 +72,11 @@ if (-not (Test-Path "$siglip\vision.onnx")) { throw "missing $siglip\vision.onnx
 New-Item -ItemType Directory -Force (Join-Path $Stage "models\siglip") | Out-Null
 Get-ChildItem $siglip -File | Copy-Item -Destination (Join-Path $Stage "models\siglip")  # not .ov_cache (per-PC)
 
+Step "Re-identification model"
+& (Join-Path $PSScriptRoot "get-reid-model.ps1")
+New-Item -ItemType Directory -Force (Join-Path $Stage "models\reid") | Out-Null
+Get-ChildItem (Join-Path $Root "models\reid") -File | Copy-Item -Destination (Join-Path $Stage "models\reid")
+
 Step "MediaMTX"
 & (Join-Path $PSScriptRoot "get-mediamtx.ps1")
 New-Item -ItemType Directory -Force (Join-Path $Stage "tools\mediamtx") | Out-Null

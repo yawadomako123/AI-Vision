@@ -242,6 +242,17 @@ Before trusting the alerts, run the system for a few days and measure:
    - for loitering, raise the dwell time
 4. Repeat until the alert rate matches what really happens.
 
+## Tracking and returning people
+
+Each person and vehicle gets a small number per camera (**#1 person, #2 car…**) that stays with them while they're in the picture: the tracker (ByteTrack) keeps someone hidden or missed for up to 3 s. People who **leave the picture and come back** within 2 minutes are recognised by an appearance fingerprint and get their old number back. That uses Intel's `person-reidentification-retail-0288` (Apache-2.0, ~1 MB, ~9 ms per person on the Intel GPU), installed by `scripts/get-reid-model.ps1` and bundled with the installer. A match needs a clear winner, so two people dressed alike get separate numbers rather than one. Without the model, numbers still stay small; returning people just get a new one (`services/vision/app/identity.py`).
+
+What uses the numbers:
+- **Loitering:** the timer belongs to the person and survives up to 5 s of being missed.
+- **Line crossings:** these follow the raw track, so someone recognised on their way back never "crosses" between where they left and where they returned.
+- **Counts** ("most people at once", in/out) never depended on the numbers.
+
+`scripts/reid_eval.py` measures it. It plays a clip, shows the empty scene for 4 s, then replays part of it, so the same people return with a known right answer. On OpenCV's `vtest.avi` (a busy street) it cut the numbers handed out from 96 to 34, and most returning people got their old number back. When it can't tell two people apart, it gives a new number rather than guessing.
+
 ## Choosing the model (accuracy vs speed)
 
 Measured on this laptop (Iris Xe GPU, with another worker sharing it):

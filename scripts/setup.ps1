@@ -219,6 +219,12 @@ $siglip = Join-Path $Root "models\siglip\vision.onnx"
 if (Test-Path $siglip) { Ok "search model present" }
 elseif ($WithSearch) { Run "Downloading the search model (~650 MB, once)" (Join-Path $Root "services\vision") "uv run --group export python ..\..\scripts\export_siglip.py"; Ok "search model ready" }
 else { Info "search model skipped (optional: run setup with -WithSearch)" }
+# Recognises people who leave the picture and come back (~1 MB). Bundled with the installer.
+if (Test-Path (Join-Path $Root "models\reid\person-reidentification-retail-0288.xml")) { Ok "re-identification model present" }
+else {
+    try { & (Join-Path $PSScriptRoot "get-reid-model.ps1"); Ok "re-identification model ready" }
+    catch { Info "re-identification model not downloaded ($_): returning people get a new number" }
+}
 
 # --- 6. database ----------------------------------------------------------------------------------
 if (-not $SkipServices) {

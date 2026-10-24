@@ -30,12 +30,16 @@ class Settings(BaseSettings):
     # Sightings + plain-English search (needs models/siglip from scripts/export_siglip.py).
     search_model_dir: Path = REPO_ROOT / "models" / "siglip"
     search_device: str = "GPU"
+    # Recognises people who leave the picture and come back (scripts/get-reid-model.ps1, ~1 MB).
+    # Without it, tracking still works; returning people just get a new number.
+    reid_model_dir: Path = REPO_ROOT / "models" / "reid"
+    reid_device: str = "GPU"
     # Short evidence clips around alerts (standalone mode; in API mode the dashboard setting wins).
     clips_enabled: bool = True
     # Raise camera_offline only after this long, so brief Wi-Fi blips don't alert.
     offline_alert_seconds: float = 15.0
 
-    @field_validator("model_path", "event_storage_path", "search_model_dir")
+    @field_validator("model_path", "event_storage_path", "search_model_dir", "reid_model_dir")
     @classmethod
     def _repo_relative(cls, p: Path) -> Path:
         return p if p.is_absolute() else REPO_ROOT / p
