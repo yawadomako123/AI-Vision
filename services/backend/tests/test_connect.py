@@ -258,6 +258,7 @@ def test_phone_setup_gives_the_next_free_slot_and_a_larix_link(client, operator,
     from app.routes import cameras as routes
     monkeypatch.setattr(routes.app_settings, "mediamtx_publish_password", "p@ss/word")
     monkeypatch.setattr(routes.discovery, "primary_ipv4", lambda: "192.168.1.20")
+    monkeypatch.setattr(routes.discovery, "network_category", lambda ip: "Public")
     client.post("/api/cameras", json={"name": "Phone 1", "stream_url": "rtsp://127.0.0.1:8554/cam1"})
     r = client.get("/api/cameras/phone-setup")
     assert r.status_code == 200, r.text
@@ -268,6 +269,7 @@ def test_phone_setup_gives_the_next_free_slot_and_a_larix_link(client, operator,
     assert link.startswith("larix://set/v1?conn[][url]=rtsp%3A%2F%2F192.168.1.20%3A8554%2Fcam2&")
     assert "conn[][pass]=p%40ss%2Fword" in link and unquote(link).count("p@ss/word") == 1
     assert "enc[vid][res]=640x480" in link
+    assert body["network_public"] is True  # the dashboard then explains the Private network setting
     assert operator.get("/api/cameras/phone-setup").status_code == 403
 
 

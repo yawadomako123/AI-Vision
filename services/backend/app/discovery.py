@@ -198,6 +198,22 @@ def primary_ipv4() -> str | None:
     return ips[0] if ips else None
 
 
+def network_category(ip: str) -> str | None:
+    """Windows' profile for the network this address is on: "Public", "Private" or "DomainAuthenticated".
+    Phones and cameras can only connect in on Private networks (the installer's firewall rule)."""
+    if os.name != "nt" or not re.fullmatch(r"\d+\.\d+\.\d+\.\d+", ip):
+        return None
+    cmd = (f"(Get-NetIPAddress -IPAddress {ip} -ErrorAction Stop | Get-NetConnectionProfile -ErrorAction Stop)"
+           ".NetworkCategory")
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd], capture_output=True,
+                             text=True, timeout=15, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = out.stdout.strip()
+    return value if value in ("Public", "Private", "DomainAuthenticated") else None
+
+
 def local_subnets() -> list[ipaddress.IPv4Network]:
     """The /24 around each local address. Real home/office camera networks are almost always /24,
     and capping the size keeps the sweep to a few seconds."""

@@ -77,6 +77,9 @@ if ($NativeMedia) {
     $env:MTX_PLAYBACKADDRESS = "127.0.0.1:9996"
     $env:MTX_HLSADDRESS = "127.0.0.1:8888"
     $env:MTX_WEBRTCADDRESS = "127.0.0.1:8889"
+    # Watching streams without a password only from this PC (the worker, recorder and dashboard all
+    # read locally). Otherwise anyone on the Wi-Fi could watch every camera.
+    $env:MTX_AUTHINTERNALUSERS_0_IPS = "127.0.0.1/32,::1/128"
 }
 
 # --- processes -------------------------------------------------------------------------------

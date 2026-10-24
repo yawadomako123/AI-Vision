@@ -124,6 +124,22 @@ function PhoneCamera({ onStreaming }: { onStreaming: () => void }) {
   if (setup.error) return <ErrorNote error={setup.error} />;
   if (!setup.data) return <p className="text-muted">Preparing…</p>;
   const s = setup.data;
+  if (s.network_public) {
+    return (
+      <div className="flex flex-col gap-2 rounded-lg bg-warn/10 p-3">
+        <p className="font-medium text-warn">First, one Windows setting: phones can't connect yet</p>
+        <p>Windows treats this computer's Wi-Fi as a <b>public</b> network (like a café), so it blocks phones from
+          connecting. If this is your home or office network:</p>
+        <ol className="list-decimal pl-5">
+          <li>Open Windows <b>Settings → Network &amp; internet → Wi-Fi</b> (or <b>Ethernet</b>).</li>
+          <li>Click your network's name, then under <b>Network profile type</b> choose <b>Private network</b>.</li>
+          <li>Come back here and click <b>Check again</b>.</li>
+        </ol>
+        <div><Button onClick={() => setup.refetch()} disabled={setup.isFetching}>
+          {setup.isFetching ? "Checking…" : "Check again"}</Button></div>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-wrap items-start gap-4">
       <QrCode text={s.larix_url} />

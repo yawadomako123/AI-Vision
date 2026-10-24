@@ -347,7 +347,7 @@ export const api = {
     request<{ streams: OnvifStream[] }>("/api/cameras/discover/onvif", {
       method: "POST", body: JSON.stringify({ onvif_url, username, password }) }),
   phoneSetup: () => request<{ path: string; publish_url: string; username: string; password: string;
-                              read_url: string; larix_url: string }>("/api/cameras/phone-setup"),
+                              read_url: string; larix_url: string; network_public: boolean }>("/api/cameras/phone-setup"),
   connectCamera: (body: { ip: string; brand: string | null; username: string; password: string; port: number;
                           onvif_url: string | null }) =>
     request<ConnectResult>("/api/cameras/discover/connect", { method: "POST", body: JSON.stringify(body) }),

@@ -117,6 +117,8 @@ def phone_setup(request: Request, admin: User = Depends(require_admin), db: Sess
     db.commit()
     return {"path": path, "publish_url": publish_url, "username": "publisher", "password": password,
             "read_url": f"rtsp://127.0.0.1:{port}/{path}",
+            # Windows blocks phones on a network it calls Public: the dashboard explains the one setting.
+            "network_public": discovery.network_category(ip) == "Public",
             "larix_url": "larix://set/v1?" + "&".join(f"{k}={quote(v, safe='')}" for k, v in grove)}
 
 
