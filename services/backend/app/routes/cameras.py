@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import io
 import time
 from datetime import datetime, timedelta, timezone
@@ -19,7 +20,8 @@ from app.db import get_db
 from app.live import hub, latest_preview
 from app.models import Camera, User
 from app.schemas import (
-    CameraCreate, CameraMuteIn, CameraOut, CameraTestResult, CameraUpdate, OnvifStreamsIn, StreamProbeIn,
+    CameraConnectIn, CameraCreate, CameraMuteIn, CameraOut, CameraTestResult, CameraUpdate, OnvifStreamsIn,
+    StreamProbeIn,
 )
 from app.serializers import camera_out
 
@@ -133,17 +135,22 @@ def _redact(exc: Exception, url: str) -> str:
     return str(exc).replace(url, "<stream>")[:300]
 
 
-# Discovery is a sweep of the whole local network: one at a time is plenty.
+# Discovery is a sweep of the whole local network: one at a time. A request that arrives while one
+# runs (a double click, a second browser tab) waits for it and shares its result.
 _discovery_lock = asyncio.Lock()
+_last_discovery: tuple[float, dict] | None = None
 
 
 @router.post("/discover")
 async def discover_cameras(request: Request, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Find cameras on the local network (ONVIF + RTSP port sweep, ~5 s)."""
-    if _discovery_lock.locked():
-        raise HTTPException(status.HTTP_409_CONFLICT, "A search is already running. Try again in a few seconds.")
+    """Find cameras on the local network (ONVIF + RTSP sweep + makers by hardware address, ~3-5 s)."""
+    global _last_discovery
     async with _discovery_lock:
-        result = await discovery.discover()
+        if _last_discovery and time.monotonic() - _last_discovery[0] < 3:
+            result = copy.deepcopy(_last_discovery[1])
+        else:
+            result = await discovery.discover()
+            _last_discovery = (time.monotonic(), copy.deepcopy(result))
     added = {urlsplit(decrypt(c.stream_url_encrypted)).hostname for c in db.scalars(select(Camera))}
     for dev in result["devices"]:
         dev["already_added"] = dev["ip"] in added or (dev["ip"] == "127.0.0.1" and "localhost" in added)
@@ -159,6 +166,40 @@ def onvif_streams(body: OnvifStreamsIn, admin: User = Depends(require_admin)):
         return {"streams": discovery.onvif_streams(body.onvif_url, body.username, body.password)}
     except discovery.OnvifError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
+
+
+@router.post("/discover/connect")
+def connect_camera(body: CameraConnectIn, request: Request, admin: User = Depends(require_admin),
+                   db: Session = Depends(get_db)):
+    """Check a found camera's login and return its ready-to-add streams (every camera of a recorder).
+    Failures come back as {"ok": false, "code", "message"} in plain words."""
+    try:
+        result = discovery.connect(body.ip, body.brand, body.username, body.password, body.port, body.onvif_url)
+    except discovery.ConnectError as exc:
+        audit(db, request, admin, "camera.connect", ip=body.ip, ok=False, code=exc.code)
+        db.commit()
+        return {"ok": False, "code": exc.code, "message": str(exc)}
+    audit(db, request, admin, "camera.connect", ip=body.ip, ok=True, streams=len(result["streams"]))
+    db.commit()
+    return {"ok": True, **result}
+
+
+@router.post("/discover/snapshot", responses={200: {"content": {"image/jpeg": {}}}})
+def stream_snapshot(body: StreamProbeIn, _: User = Depends(require_admin)):
+    """A small picture from a stream that isn't added yet, so people can see which camera is which."""
+    host = urlsplit(body.stream_url).hostname or ""
+    if not discovery.is_local(host) and host != "localhost":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "only cameras on the local network")
+    try:
+        with _open(body.stream_url) as container:
+            _, frame = _first_frame(container)
+            image = frame.to_image()
+            image.thumbnail((480, 270))
+            buf = io.BytesIO()
+            image.save(buf, format="JPEG", quality=80)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"no picture: {_redact(exc, body.stream_url)}")
+    return Response(buf.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.post("/probe", response_model=CameraTestResult)

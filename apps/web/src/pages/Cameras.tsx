@@ -7,7 +7,7 @@ import { useAuth } from "../auth";
 import { CameraStatusBadge } from "../components/Badges";
 import { FindCameras, type Picked } from "../components/FindCameras";
 import { Modal } from "../components/Modal";
-import { Button, Card, Empty, ErrorNote, inputCls } from "../components/ui";
+import { Button, Card, ErrorNote, inputCls } from "../components/ui";
 import { liveViewUrl, timeAgo } from "../format";
 
 function CameraForm({ camera, picked, onDone }: { camera?: Camera; picked?: Picked; onDone: () => void }) {
@@ -162,6 +162,7 @@ export default function Cameras() {
   const [editing, setEditing] = useState<Camera | "new" | null>(null);
   const [finding, setFinding] = useState(false);
   const [picked, setPicked] = useState<Picked | undefined>();
+  const [added, setAdded] = useState(0);
 
   return (
     <div className="flex flex-col gap-5">
@@ -169,14 +170,25 @@ export default function Cameras() {
         <h1 className="text-xl font-semibold">Cameras</h1>
         {isAdmin && (
           <div className="flex gap-2">
-            <Button onClick={() => setFinding(true)}>Find cameras</Button>
-            <Button variant="primary" onClick={() => { setPicked(undefined); setEditing("new"); }}>Add camera</Button>
+            <Button onClick={() => { setPicked(undefined); setEditing("new"); }}>Add by address</Button>
+            <Button variant="primary" onClick={() => { setAdded(0); setFinding(true); }}>Add cameras</Button>
           </div>
         )}
       </div>
       {cameras.error && <ErrorNote error={cameras.error} />}
+      {added > 0 && (
+        <p role="status" className="rounded-lg bg-ok/10 px-4 py-2.5 text-sm text-ok">
+          Added {added} {added === 1 ? "camera" : "cameras"}. Next, click <b>Rules</b> on a camera to choose what to watch for.
+        </p>
+      )}
       {cameras.data?.length === 0 && (
-        <Card><Empty>No cameras yet. Add your phone (Larix) or an IP camera to start.</Empty></Card>
+        <Card>
+          <div className="flex flex-col items-center gap-3 p-8 text-center text-sm">
+            <p className="text-base font-medium">No cameras yet</p>
+            <p className="max-w-md text-muted">Make sure your cameras are switched on and connected to the same router or Wi-Fi as this computer.</p>
+            {isAdmin && <Button variant="primary" onClick={() => { setAdded(0); setFinding(true); }}>Find my cameras</Button>}
+          </div>
+        </Card>
       )}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {cameras.data?.map((c) => <CameraCard key={c.id} camera={c} onEdit={() => setEditing(c)} />)}
@@ -189,8 +201,9 @@ export default function Cameras() {
                       picked={editing === "new" ? picked : undefined} onDone={() => setEditing(null)} />
         )}
       </Modal>
-      <Modal open={finding} onClose={() => setFinding(false)} wide title="Find cameras on your network">
-        {finding && <FindCameras onPick={(p) => { setPicked(p); setFinding(false); setEditing("new"); }} />}
+      <Modal open={finding} onClose={() => setFinding(false)} wide title="Add cameras">
+        {finding && <FindCameras onPick={(p) => { setPicked(p); setFinding(false); setEditing("new"); }}
+                                 onAdded={(n) => { setAdded(n); setFinding(false); }} />}
       </Modal>
     </div>
   );

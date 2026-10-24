@@ -31,9 +31,21 @@ export interface FoundDevice {
   onvif_url: string | null;
   rtsp_ports: number[];
   brand: string | null;
+  /** Display name of the maker ("Hikvision", "Tapo", "Ring"…), when known. */
+  brand_name: string | null;
+  mac: string | null;
+  /** camera: video reachable · hidden: a camera maker's device with video switched off ·
+   *  cloud_only: works only through its maker's cloud · phone: this computer's camera hub */
+  kind: "camera" | "hidden" | "cloud_only" | "phone";
+  recorder: boolean;
+  default_user: string;
   suggestions: { label: string; url: string }[];
   already_added: boolean;
 }
+
+export type ConnectResult =
+  | { ok: true; streams: { channel: number; url: string }[]; recorder: boolean }
+  | { ok: false; code: string; message: string };
 
 export interface Discovery {
   subnets: string[];
@@ -332,6 +344,18 @@ export const api = {
   onvifStreams: (onvif_url: string, username: string, password: string) =>
     request<{ streams: OnvifStream[] }>("/api/cameras/discover/onvif", {
       method: "POST", body: JSON.stringify({ onvif_url, username, password }) }),
+  connectCamera: (body: { ip: string; brand: string | null; username: string; password: string; port: number;
+                          onvif_url: string | null }) =>
+    request<ConnectResult>("/api/cameras/discover/connect", { method: "POST", body: JSON.stringify(body) }),
+  /** A small picture from a stream that isn't added yet, as an object URL (revoke it when done). */
+  streamSnapshot: async (stream_url: string): Promise<string> => {
+    const res = await fetch("/api/cameras/discover/snapshot", {
+      method: "POST", credentials: "same-origin", body: JSON.stringify({ stream_url }),
+      headers: { "Content-Type": "application/json", "X-Requested-With": "aivision" },
+    });
+    if (!res.ok) throw new ApiError("no picture", res.status);
+    return URL.createObjectURL(await res.blob());
+  },
   probeStream: (stream_url: string) =>
     request<CameraTestResult>("/api/cameras/probe", { method: "POST", body: JSON.stringify({ stream_url }) }),
   recordings: (id: number, start: string, end: string) =>

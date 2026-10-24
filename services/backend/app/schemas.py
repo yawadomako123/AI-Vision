@@ -43,6 +43,17 @@ class StreamProbeIn(BaseModel):
     _url = field_validator("stream_url")(_check_stream_url)
 
 
+class CameraConnectIn(BaseModel):
+    """A found device plus its login: the wizard's "connect" step."""
+
+    ip: str = Field(max_length=45)
+    brand: str | None = Field(default=None, max_length=40)
+    username: str = Field(default="", max_length=120)
+    password: str = Field(default="", max_length=200)
+    port: int = Field(default=554, ge=1, le=65535)
+    onvif_url: str | None = Field(default=None, pattern=r"^https?://", max_length=500)
+
+
 class OnvifStreamsIn(BaseModel):
     onvif_url: str = Field(pattern=r"^https?://", max_length=500)
     username: str = Field(max_length=120)

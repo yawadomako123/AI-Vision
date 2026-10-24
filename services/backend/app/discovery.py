@@ -1,12 +1,16 @@
 """Find IP cameras on the local network, so adding one is "pick it from a list".
 
-Two complementary passes, standard library only:
+Three complementary passes, standard library only:
 - ONVIF WS-Discovery: a UDP multicast probe most IP cameras answer (name, model, ONVIF address).
 - A quick TCP sweep of the local /24 networks for RTSP ports, which also finds cameras with
-  ONVIF switched off. An RTSP OPTIONS/DESCRIBE request then hints at the brand.
+  ONVIF switched off. An RTSP DESCRIBE request then hints at the brand.
+- The maker behind each device's hardware (MAC) address, from this computer's ARP table (the
+  sweep fills it). This recognises cameras that answer neither, e.g. a Tapo camera before its
+  "camera account" is set up, so the dashboard can say exactly what to switch on.
 
-With the camera's username and password, `onvif_streams` asks the camera itself for its exact
-stream URLs (main stream and substream), so nobody has to look up brand-specific RTSP paths.
+`connect` then turns an address plus the camera's password into ready-to-add streams: it checks
+the password with one RTSP request, finds every camera on a recorder (NVR/DVR), and explains
+failures in plain words. `onvif_streams` asks an ONVIF camera for its own stream URLs.
 
 Only private, loopback and link-local addresses are ever contacted.
 """
@@ -20,20 +24,39 @@ import os
 import re
 import select
 import socket
+import subprocess
 import time
 import urllib.error
 import urllib.request
 import uuid
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote, urlsplit, urlunsplit
+from pathlib import Path
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
+
+from app.camera_vendors import OUI_VENDORS
 
 log = logging.getLogger(__name__)
 
 WS_DISCOVERY = ("239.255.255.250", 3702)
 RTSP_PORTS = (554, 8554, 10554)
+# Not video, but they give a camera away when its RTSP is off: Tapo's ONVIF port, Hikvision's SDK port.
+HINT_PORTS = (2020, 8000)
 MAX_SUBNETS = 4
+MAX_CHANNELS = 16  # cameras looked for on a recorder (NVR/DVR)
+
+BRAND_NAMES = {
+    "hikvision": "Hikvision", "ezviz": "EZVIZ", "tp-link": "Tapo", "dahua": "Dahua", "reolink": "Reolink",
+    "uniview": "Uniview", "axis": "Axis", "amcrest": "Amcrest", "hanwha": "Hanwha", "lorex": "Lorex",
+    "mediamtx": "Phone",
+}
+# These only stream through their maker's cloud: they can't be used, and saying so saves a long search.
+CLOUD_ONLY = {"ring": "Ring", "arlo": "Arlo", "blink": "Blink", "wyze": "Wyze", "nest": "Google Nest"}
+# Login name most cameras of a brand use ("" = the customer creates one, e.g. Tapo's camera account).
+DEFAULT_USER = {"hikvision": "admin", "ezviz": "admin", "dahua": "admin", "amcrest": "admin", "reolink": "admin",
+                "uniview": "admin", "hanwha": "admin", "lorex": "admin", "axis": "root", "tp-link": ""}
 
 # Substream first: it's what the worker should analyse (low resolution = light).
 BRAND_PATHS: dict[str, list[tuple[str, str]]] = {
@@ -41,6 +64,7 @@ BRAND_PATHS: dict[str, list[tuple[str, str]]] = {
     "dahua": [("Substream", "/cam/realmonitor?channel=1&subtype=1"), ("Main stream", "/cam/realmonitor?channel=1&subtype=0")],
     "reolink": [("Substream", "/h264Preview_01_sub"), ("Main stream", "/h264Preview_01_main")],
     "tp-link": [("Substream", "/stream2"), ("Main stream", "/stream1")],
+    "ezviz": [("Substream", "/h264/ch1/sub/av_stream"), ("Main stream", "/h264/ch1/main/av_stream")],
     "uniview": [("Substream", "/media/video2"), ("Main stream", "/media/video1")],
     "axis": [("Default", "/axis-media/media.amp")],
     "amcrest": [("Substream", "/cam/realmonitor?channel=1&subtype=1"), ("Main stream", "/cam/realmonitor?channel=1&subtype=0")],
@@ -62,6 +86,16 @@ class Device:
     onvif_url: str | None = None
     rtsp_ports: list[int] = field(default_factory=list)
     brand: str | None = None
+    mac: str | None = None
+    # camera: video reachable | hidden: a camera maker's device with its video switched off |
+    # cloud_only: works only through its maker's cloud | phone: this computer's MediaMTX
+    kind: str = "camera"
+
+    @property
+    def recorder(self) -> bool:
+        """A Hikvision/Dahua-style recorder by its model name (DS-7xxx/9xxx, NVR/DVR/XVR)."""
+        text = f"{self.model or ''} {self.name or ''}"
+        return bool(re.search(r"\bi?DS-[79]\d|\b[NDX]VR\b|\bNVR\d|\bDHI-[NX]VR", text, re.I))
 
     def suggestions(self) -> list[dict]:
         port = self.rtsp_ports[0] if self.rtsp_ports else 554
@@ -74,6 +108,9 @@ class Device:
     def out(self) -> dict:
         return {"ip": self.ip, "name": self.name, "manufacturer": self.manufacturer, "model": self.model,
                 "onvif_url": self.onvif_url, "rtsp_ports": self.rtsp_ports, "brand": self.brand,
+                "brand_name": BRAND_NAMES.get(self.brand or "") or CLOUD_ONLY.get(self.brand or ""),
+                "mac": self.mac, "kind": self.kind, "recorder": self.recorder,
+                "default_user": DEFAULT_USER.get(self.brand or "", "admin"),
                 "suggestions": self.suggestions()}
 
 
@@ -95,8 +132,40 @@ def _guess_brand(*texts: str | None) -> str | None:
 
 # --- local networks -------------------------------------------------------------------------
 
+# Virtual and VPN adapters: no cameras live there, and Hyper-V/WSL switches even answer for
+# addresses that don't exist, which would show up as phantom cameras.
+VIRTUAL_ADAPTER = re.compile(r"vEthernet|Hyper-V|WSL|VirtualBox|VMware|Docker|Loopback|Tailscale|ZeroTier|"
+                             r"Bluetooth|WireGuard|OpenVPN|TAP-|^docker|^br-|^veth|^virbr|^lxc|^tailscale|^zt|^wg",
+                             re.I)
+
+
+def parse_adapters(text: str) -> dict[str, str]:
+    """ip -> adapter name, from `netsh interface ip show address` (Windows) or `ip -o -4 addr` (Linux)."""
+    out: dict[str, str] = {}
+    name = ""
+    for line in text.splitlines():
+        if m := re.match(r'Configuration for interface "(.+)"', line.strip()):
+            name = m.group(1)
+        elif m := re.match(r"IP Address:\s*(\d+\.\d+\.\d+\.\d+)", line.strip()):
+            out[m.group(1)] = name
+        elif m := re.match(r"\d+:\s+(\S+)\s+inet\s+(\d+\.\d+\.\d+\.\d+)", line.strip()):
+            out[m.group(2)] = m.group(1)
+    return out
+
+
+def _virtual_ips() -> set[str]:
+    cmd = ["netsh", "interface", "ip", "show", "address"] if os.name == "nt" else ["ip", "-o", "-4", "addr"]
+    try:
+        text = subprocess.run(cmd, capture_output=True, text=True, timeout=5,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {ip for ip, name in parse_adapters(text).items() if VIRTUAL_ADAPTER.search(name)}
+
+
 def local_ipv4() -> list[str]:
-    """This machine's private IPv4 addresses (Wi-Fi, Ethernet; not loopback)."""
+    """This machine's private IPv4 addresses on real networks (Wi-Fi, Ethernet; not loopback,
+    virtual switches or VPNs)."""
     found: set[str] = set()
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
@@ -109,8 +178,10 @@ def local_ipv4() -> list[str]:
             found.add(s.getsockname()[0])
     except OSError:
         pass
+    virtual = _virtual_ips()
     return sorted(ip for ip in found
-                  if ipaddress.ip_address(ip).is_private and not ipaddress.ip_address(ip).is_loopback)
+                  if ipaddress.ip_address(ip).is_private and not ipaddress.ip_address(ip).is_loopback
+                  and ip not in virtual)
 
 
 def local_subnets() -> list[ipaddress.IPv4Network]:
@@ -122,6 +193,43 @@ def local_subnets() -> list[ipaddress.IPv4Network]:
         if net not in nets:
             nets.append(net)
     return nets[:MAX_SUBNETS]
+
+
+# --- makers by hardware address -------------------------------------------------------------
+
+_ARP_LINE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b.*?\b([0-9a-fA-F]{2}(?:[-:][0-9a-fA-F]{2}){5})\b")
+
+
+def parse_arp(text: str) -> dict[str, str]:
+    """ip -> MAC from `arp -a` (Windows) or /proc/net/arp (Linux)."""
+    out = {}
+    for line in text.splitlines():
+        m = _ARP_LINE.search(line)
+        if not m:
+            continue
+        ip, mac = m.group(1), m.group(2).replace("-", ":").upper()
+        first = int(mac[:2], 16)
+        # Skip broadcast/multicast and randomised ("private") addresses: phones use those, cameras don't.
+        if first & 0b11 or not is_local(ip) or ipaddress.ip_address(ip).is_loopback:
+            continue
+        out[ip] = mac
+    return out
+
+
+def arp_table() -> dict[str, str]:
+    try:
+        if os.name == "nt":
+            text = subprocess.run(["arp", "-a"], capture_output=True, text=True, timeout=5,
+                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+        else:
+            text = Path("/proc/net/arp").read_text()
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    return parse_arp(text)
+
+
+def vendor_of(mac: str | None) -> str | None:
+    return OUI_VENDORS.get(mac.replace(":", "")[:6]) if mac else None
 
 
 # --- ONVIF WS-Discovery ---------------------------------------------------------------------
@@ -214,7 +322,8 @@ async def _port_open(ip: str, port: int, timeout: float) -> bool:
 
 
 async def _rtsp_banner(ip: str, port: int, timeout: float = 1.5) -> str:
-    """Server header and auth realm from an unauthenticated DESCRIBE (both often name the brand)."""
+    """Status line, Server header and auth realm from an unauthenticated DESCRIBE (the last two often
+    name the brand). Empty if nothing speaks RTSP there."""
     try:
         reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout)
     except (OSError, asyncio.TimeoutError):
@@ -224,8 +333,10 @@ async def _rtsp_banner(ip: str, port: int, timeout: float = 1.5) -> str:
         await writer.drain()
         data = await asyncio.wait_for(reader.read(2048), timeout)
         text = data.decode("latin-1", "replace")
-        return " ".join(line for line in text.splitlines()
-                        if line.lower().startswith(("server:", "www-authenticate:")))
+        if not text.startswith("RTSP/"):
+            return ""
+        return " ".join(line for i, line in enumerate(text.splitlines())
+                        if i == 0 or line.lower().startswith(("server:", "www-authenticate:")))
     except (OSError, asyncio.TimeoutError):
         return ""
     finally:
@@ -233,8 +344,9 @@ async def _rtsp_banner(ip: str, port: int, timeout: float = 1.5) -> str:
 
 
 async def rtsp_sweep(subnets: list[ipaddress.IPv4Network], timeout: float = 0.6,
-                     concurrency: int = 200) -> dict[str, tuple[list[int], str]]:
-    """ip -> (open RTSP ports, banner)."""
+                     concurrency: int = 400) -> dict[str, tuple[list[int], str]]:
+    """ip -> (open RTSP and hint ports, RTSP banner). Connecting to every address also fills the
+    ARP table that `arp_table` reads, even for devices with every port closed."""
     sem = asyncio.Semaphore(concurrency)
     own = set(local_ipv4())
 
@@ -243,36 +355,76 @@ async def rtsp_sweep(subnets: list[ipaddress.IPv4Network], timeout: float = 0.6,
             return ip, port, await _port_open(ip, port, timeout)
 
     hosts = [str(h) for net in subnets for h in net.hosts()]
-    results = await asyncio.gather(*(probe(ip, p) for ip in hosts for p in RTSP_PORTS))
+    results = await asyncio.gather(*(probe(ip, p) for ip in hosts for p in RTSP_PORTS + HINT_PORTS))
     open_ports: dict[str, list[int]] = {}
     for ip, port, ok in results:
         if ok:
             open_ports.setdefault(ip, []).append(port)
-    # This machine's own MediaMTX (the phone) is reached as 127.0.0.1 by the worker.
-    banners = await asyncio.gather(*(_rtsp_banner(ip, ports[0]) for ip, ports in open_ports.items()))
+
+    async def banner(ip: str, ports: list[int]) -> str:
+        rtsp = [p for p in ports if p in RTSP_PORTS]
+        return await _rtsp_banner(ip, rtsp[0]) if rtsp else ""
+
+    banners = await asyncio.gather(*(banner(ip, ports) for ip, ports in open_ports.items()))
     out = {}
-    for (ip, ports), banner in zip(open_ports.items(), banners):
-        out["127.0.0.1" if ip in own else ip] = (sorted(ports), banner)
+    for (ip, ports), text in zip(open_ports.items(), banners):
+        # This machine's own MediaMTX (the phone) is reached as 127.0.0.1 by the worker.
+        out["127.0.0.1" if ip in own else ip] = (sorted(ports), text)
     return out
+
+
+def classify(devices: dict[str, Device], ports: dict[str, list[int]], arp: dict[str, str]) -> list[Device]:
+    """Decide what each found address is, add camera-maker devices only the ARP table knows about,
+    and drop everything that isn't a camera."""
+    for ip, mac in arp.items():
+        if vendor_of(mac) and ip not in devices:
+            devices[ip] = Device(ip=ip)
+    kept = []
+    for ip, dev in devices.items():
+        open_ = ports.get(ip, [])
+        dev.mac = dev.mac or arp.get(ip)
+        vendor = vendor_of(dev.mac)
+        dev.rtsp_ports = dev.rtsp_ports or [p for p in open_ if p in RTSP_PORTS]
+        dev.brand = dev.brand or _guess_brand(dev.manufacturer, dev.model, dev.name) or vendor
+        if ip == "127.0.0.1":
+            dev.kind = "phone"
+        elif vendor in CLOUD_ONLY:
+            dev.kind, dev.brand = "cloud_only", vendor
+        elif dev.rtsp_ports or dev.onvif_url:
+            dev.kind = "camera"
+        elif vendor == "tp-link" and 2020 not in open_:
+            continue  # a TP-Link router, plug or bulb: Tapo cameras keep their ONVIF port 2020 open
+        elif vendor:
+            dev.kind = "hidden"
+        else:
+            continue  # only a hint port open on an unknown device: not evidence of a camera
+        if dev.onvif_url and not dev.rtsp_ports:
+            dev.rtsp_ports = [554]
+        kept.append(dev)
+    return kept
 
 
 async def discover(timeout: float = 2.5) -> dict:
     subnets = local_subnets()
     onvif_task = asyncio.to_thread(ws_discover, timeout)
-    onvif, rtsp = await asyncio.gather(onvif_task, rtsp_sweep(subnets))
+    onvif, swept = await asyncio.gather(onvif_task, rtsp_sweep(subnets))
+    arp = await asyncio.to_thread(arp_table)
     devices: dict[str, Device] = {d.ip: d for d in onvif}
-    for ip, (ports, banner) in rtsp.items():
+    for ip, (ports, banner) in swept.items():
+        rtsp = [p for p in ports if p in RTSP_PORTS] if banner else []  # an open port alone isn't a camera
+        if not rtsp and ip not in devices and not vendor_of(arp.get(ip)):
+            continue
         dev = devices.setdefault(ip, Device(ip=ip))
-        dev.rtsp_ports = ports
+        dev.rtsp_ports = rtsp
         dev.brand = dev.brand or _guess_brand(banner, dev.manufacturer)
         if ip == "127.0.0.1" and not dev.name:
             dev.name, dev.brand = "This computer (MediaMTX)", dev.brand or "mediamtx"
-    for dev in devices.values():
-        dev.brand = dev.brand or _guess_brand(dev.manufacturer, dev.model, dev.name)
-        if dev.onvif_url and not dev.rtsp_ports:
-            dev.rtsp_ports = [554]
-    ordered = sorted(devices.values(), key=lambda d: (d.ip != "127.0.0.1", ipaddress.ip_address(d.ip)))
-    return {"subnets": [str(n) for n in subnets], "devices": [d.out() for d in ordered]}
+    # RTSP ports count only where something answered in RTSP; hint ports count as they are.
+    verified = {ip: [p for p in ports if p not in RTSP_PORTS or banner] for ip, (ports, banner) in swept.items()}
+    found = classify(devices, verified, arp)
+    order = {"phone": 0, "camera": 1, "hidden": 2, "cloud_only": 3}
+    found.sort(key=lambda d: (order[d.kind], ipaddress.ip_address(d.ip)))
+    return {"subnets": [str(n) for n in subnets], "devices": [d.out() for d in found]}
 
 
 # --- ONVIF stream lookup ------------------------------------------------------------------
@@ -396,3 +548,183 @@ def onvif_streams(onvif_url: str, username: str, password: str) -> list[dict]:
     if not streams:
         raise OnvifError("The camera didn't give any RTSP stream addresses.")
     return sorted(streams, key=lambda s: (s["width"] * s["height"] or 10**9))
+
+
+# --- connecting: password check, recorder channels -------------------------------------------
+
+def _rtsp_request(sock: socket.socket, url: str, cseq: int, auth: str | None) -> tuple[int, list[tuple[str, str]]]:
+    lines = [f"DESCRIBE {url} RTSP/1.0", f"CSeq: {cseq}", "Accept: application/sdp", "User-Agent: AIVisionEdge"]
+    if auth:
+        lines.append(f"Authorization: {auth}")
+    sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode())
+    data = b""
+    while b"\r\n\r\n" not in data and len(data) < 65536:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        data += chunk
+    head, _, body = data.partition(b"\r\n\r\n")
+    text = head.decode("latin-1", "replace").splitlines()
+    m = re.match(r"RTSP/\d\.\d\s+(\d{3})", text[0] if text else "")
+    headers = [(k.strip().lower(), v.strip()) for k, _, v in (line.partition(":") for line in text[1:])]
+    length = next((int(v) for k, v in headers if k == "content-length" and v.isdigit()), 0)
+    while len(body) < length:  # read the body so a second request on this connection lines up
+        chunk = sock.recv(min(65536, length - len(body)))
+        if not chunk:
+            break
+        body += chunk
+    return (int(m.group(1)) if m else 0), headers
+
+
+def _rtsp_auth(headers: list[tuple[str, str]], url: str, user: str, password: str) -> str | None:
+    """Authorization header for a 401's challenge: Digest when offered (most cameras), else Basic."""
+    challenges = [v for k, v in headers if k == "www-authenticate"]
+    digest = next((c for c in challenges if c.lower().startswith("digest")), None)
+    if digest:
+        p = dict(re.findall(r'(\w+)="?([^",]*)"?', digest[6:]))
+        ha1 = hashlib.md5(f"{user}:{p.get('realm', '')}:{password}".encode()).hexdigest()
+        ha2 = hashlib.md5(f"DESCRIBE:{url}".encode()).hexdigest()
+        nonce = p.get("nonce", "")
+        fields = f'username="{user}", realm="{p.get("realm", "")}", nonce="{nonce}", uri="{url}"'
+        if "auth" in p.get("qop", "").split(","):
+            cnonce = os.urandom(8).hex()
+            resp = hashlib.md5(f"{ha1}:{nonce}:00000001:{cnonce}:auth:{ha2}".encode()).hexdigest()
+            fields += f', qop=auth, nc=00000001, cnonce="{cnonce}"'
+        else:
+            resp = hashlib.md5(f"{ha1}:{nonce}:{ha2}".encode()).hexdigest()
+        if p.get("opaque"):
+            fields += f', opaque="{p["opaque"]}"'
+        return f'Digest {fields}, response="{resp}"'
+    if any(c.lower().startswith("basic") for c in challenges):
+        return "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
+    return None
+
+
+def rtsp_status(url: str, timeout: float = 4.0) -> int:
+    """RTSP status of a stream URL, logging in with the credentials in it: 200 = it works,
+    401 = wrong username/password, 404 = no such stream, 0 = unreachable. At most one login
+    attempt (cameras lock themselves after several wrong passwords)."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if not is_local(host):
+        raise ValueError("Only cameras on the local network can be contacted.")
+    user, password = unquote(parts.username or ""), unquote(parts.password or "")
+    clean = urlunsplit((parts.scheme, host + (f":{parts.port}" if parts.port else ""), parts.path, parts.query, ""))
+    auth = None
+    try:
+        with socket.create_connection((host, parts.port or 554), timeout) as sock:
+            sock.settimeout(timeout)
+            code, headers = _rtsp_request(sock, clean, 1, None)
+            if code != 401 or not (user or password):
+                return code
+            auth = _rtsp_auth(headers, clean, user, password)
+            if auth is None:
+                return code
+            try:
+                code = _rtsp_request(sock, clean, 2, auth)[0]
+                if code:
+                    return code
+            except OSError:
+                pass
+        # Some cameras close the connection after a 401: send the login on a new one.
+        with socket.create_connection((host, parts.port or 554), timeout) as sock:
+            sock.settimeout(timeout)
+            return _rtsp_request(sock, clean, 1, auth)[0]
+    except OSError:
+        return 0
+
+
+# Substream first everywhere: it's the light one the AI should analyse.
+CHANNEL_PATHS = {  # brands whose recorders number their cameras
+    "hikvision": "/Streaming/Channels/{n}02",
+    "dahua": "/cam/realmonitor?channel={n}&subtype=1",
+    "amcrest": "/cam/realmonitor?channel={n}&subtype=1",
+}
+SINGLE_PATHS = {
+    "tp-link": "/stream2", "ezviz": "/h264/ch1/sub/av_stream", "reolink": "/h264Preview_01_sub",
+    "uniview": "/media/video2", "axis": "/axis-media/media.amp", "mediamtx": "/cam1",
+}
+# Unknown brand: the common substream addresses, most likely first.
+GENERIC_PATHS = ["/Streaming/Channels/102", "/stream2", "/cam/realmonitor?channel=1&subtype=1",
+                 "/h264Preview_01_sub", "/media/video2", "/h264/ch1/sub/av_stream", "/live/ch00_1", "/"]
+
+WRONG_LOGIN = {
+    "hikvision": "Wrong username or password. Check them carefully before trying again: Hikvision cameras lock "
+                 "logins for 30 minutes after a few wrong tries. A brand-new camera must be activated first "
+                 "(see the Hikvision help below).",
+    "ezviz": "Wrong password. For EZVIZ cameras the username is admin and the password is the 6-letter "
+             "verification code on the camera's sticker.",
+    "tp-link": "Wrong camera account. Use the camera account you created in the Tapo app (camera settings → "
+               "Advanced settings → Camera account), not your TP-Link/Tapo app login.",
+}
+
+
+class ConnectError(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def _wrong_login(brand: str | None) -> ConnectError:
+    return ConnectError("wrong_password", WRONG_LOGIN.get(brand or "", "Wrong username or password for this camera."))
+
+
+def connect(ip: str, brand: str | None, username: str, password: str, port: int = 554,
+            onvif_url: str | None = None) -> dict:
+    """Turn a found device plus its login into ready-to-add stream URLs (substreams).
+    Returns {"streams": [{"channel": n, "url": ...}], "recorder": bool}."""
+    if not is_local(ip):
+        raise ConnectError("not_local", "Only cameras on the local network can be added this way.")
+    host = ip if port == 554 else f"{ip}:{port}"
+
+    def url(path: str) -> str:
+        if brand == "mediamtx":  # this computer's camera hub: reading needs no login
+            return f"rtsp://{host}{path}"
+        return with_credentials(f"rtsp://{host}{path}", username, password)
+
+    def found(paths: list[tuple[int, str]]) -> dict:
+        return {"streams": [{"channel": n, "url": url(p)} for n, p in paths], "recorder": len(paths) > 1}
+
+    code = -1
+    if brand in CHANNEL_PATHS:
+        template = CHANNEL_PATHS[brand]
+        code = rtsp_status(url(template.format(n=1)))
+        if code in (401, 403):
+            raise _wrong_login(brand)
+        if code == 200:
+            # The login works: look for a recorder's other cameras, all at once.
+            others = list(range(2, MAX_CHANNELS + 1))
+            with ThreadPoolExecutor(8) as pool:
+                codes = list(pool.map(lambda n: rtsp_status(url(template.format(n=n))), others))
+            return found([(1, template.format(n=1))] +
+                         [(n, template.format(n=n)) for n, c in zip(others, codes) if c == 200])
+    elif brand in SINGLE_PATHS:
+        code = rtsp_status(url(SINGLE_PATHS[brand]))
+        if code in (401, 403):
+            raise _wrong_login(brand)
+        if code == 200:
+            return found([(1, SINGLE_PATHS[brand])])
+
+    if onvif_url:  # the camera's own answer, whatever its brand
+        try:
+            streams = onvif_streams(onvif_url, username, password)
+            return {"streams": [{"channel": 1, "url": streams[0]["url"]}], "recorder": False}
+        except OnvifError as exc:
+            if "username or password" in str(exc):
+                raise _wrong_login(brand) from None
+
+    if brand not in CHANNEL_PATHS and brand not in SINGLE_PATHS:
+        for path in GENERIC_PATHS:
+            code = rtsp_status(url(path))
+            if code == 200:
+                return found([(1, path)])
+            if code in (401, 403):  # stop at the first refusal: never guess
+                raise ConnectError("wrong_password", "Wrong username or password, or this camera uses a stream "
+                                   "address we don't know. Check the login, or add it by hand with its RTSP address.")
+            if code == 0:
+                break
+    if code == 0:
+        raise ConnectError("unreachable", "Couldn't reach the camera. Check it's switched on and connected, "
+                           "then search again.")
+    raise ConnectError("no_stream", "The camera answered but we couldn't find its video. Add it by hand with "
+                       "its RTSP address (in the camera's manual or app).")

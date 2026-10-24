@@ -6,6 +6,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "apps/web", "run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "api-test",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-Command", "$env:DATABASE_URL='sqlite:///storage/devtest.db'; $env:MEDIAMTX_API_PASSWORD=''; Set-Location services/backend; uv run alembic upgrade head; uv run uvicorn app.main:app --host 127.0.0.1 --port 8100"],
+      "port": 8100
+    },
+    {
+      "name": "web-test",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-Command", "$env:AIV_API='http://127.0.0.1:8100'; npm --prefix apps/web run dev -- --port 5174 --strictPort"],
+      "port": 5174
     }
   ]
 }
