@@ -190,7 +190,7 @@ One `.exe` that sets up everything with no Docker, Git, Node.js or Python needed
 
 ```powershell
 winget install --id JRSoftware.InnoSetup -e   # once, on the build PC (free)
-.\scriptsuild-installer.ps1                 # -> dist\AIVisionEdge-Setup-<date>.exe
+.\scripts\build-installer.ps1                 # -> dist\AIVisionEdge-Setup-<date>.exe
 ```
 
 The build bundles the app from git `HEAD` (commit first), the pre-built dashboard, the detection model, MediaMTX, [uv](https://github.com/astral-sh/uv) and [WinSW](https://github.com/winsw/winsw); every download is checksum-verified. The installer (needs administrator):
