@@ -32,15 +32,23 @@ function WebRtcVideo({ url, onState }: { url: string; onState: (ok: boolean) => 
       pc = new RTCPeerConnection();
       const conn = pc;
       conn.addTransceiver("video", { direction: "recvonly" });
-      conn.ontrack = (e) => {
-        if (video.current) video.current.srcObject = e.streams[0] ?? new MediaStream([e.track]);
-      };
-      conn.onconnectionstatechange = () => {
-        if (conn.connectionState === "connected") onState(true);
-        if (["failed", "disconnected", "closed"].includes(conn.connectionState) && !closed) {
+      const checkState = () => {
+        if (conn.connectionState === "connected" || conn.iceConnectionState === "connected") {
+          onState(true);
+        }
+        if (["failed", "closed"].includes(conn.connectionState) && !closed) {
           onState(false);
           retry = window.setTimeout(start, 3000);
         }
+      };
+      conn.onconnectionstatechange = checkState;
+      conn.oniceconnectionstatechange = checkState;
+      conn.ontrack = (e) => {
+        if (video.current) {
+          video.current.srcObject = e.streams[0] ?? new MediaStream([e.track]);
+          video.current.play().catch(() => {});
+        }
+        onState(true);
       };
       try {
         await conn.setLocalDescription(await conn.createOffer());
@@ -51,8 +59,12 @@ function WebRtcVideo({ url, onState }: { url: string; onState: (ok: boolean) => 
             if (conn.iceGatheringState === "complete") { window.clearTimeout(t); done(); }
           };
         });
-        const r = await fetch(`${url}/whep`, {
-          method: "POST", headers: { "Content-Type": "application/sdp" }, body: conn.localDescription!.sdp,
+        const whepEndpoint = url.endsWith("/whep") ? url : `${url}/whep`;
+        const r = await fetch(whepEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/sdp" },
+          credentials: "include",
+          body: conn.localDescription!.sdp,
         });
         if (!r.ok) throw new Error(`WHEP ${r.status}`);
         await conn.setRemoteDescription({ type: "answer", sdp: await r.text() });
@@ -70,7 +82,7 @@ function Tile({ camera, detections, alert, showBoxes, single }: {
   camera: Camera; detections: Detections | undefined; alert: string | null; showBoxes: boolean; single: boolean;
 }) {
   const tile = useRef<HTMLDivElement>(null);
-  const webrtc = liveViewUrl(camera.stream_url_masked, camera.live_path);
+  const webrtc = liveViewUrl(camera.stream_url_masked, camera.live_path, camera.id);
   // Privacy masks: the worker blacks these out in everything it saves; the raw WebRTC video
   // doesn't pass through the worker, so they're painted over it here.
   const rules = useQuery({ queryKey: ["rules", camera.id], queryFn: () => api.rules(camera.id), staleTime: 30_000 });

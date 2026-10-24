@@ -60,6 +60,7 @@ class MediaMTX:
         self.enabled = bool(settings.mediamtx_api_password)
         self._auth = ("aivision", settings.mediamtx_api_password)
         self._api = httpx.Client(base_url=settings.mediamtx_api_url, auth=self._auth, timeout=5)
+        self._last_record_days: int | None = None
 
     def _call(self, method: str, url: str, **kw) -> httpx.Response:
         if not self.enabled:
@@ -79,7 +80,9 @@ class MediaMTX:
 
     def sync(self, desired: dict[str, dict], record_days: int) -> dict:
         """Make MediaMTX's runtime path config match `desired` (name -> settings)."""
-        self._call("PATCH", "/v3/config/pathdefaults/patch", json={"recordDeleteAfter": f"{record_days}d"})
+        if self._last_record_days != record_days:
+            self._call("PATCH", "/v3/config/pathdefaults/patch", json={"recordDeleteAfter": f"{record_days}d"})
+            self._last_record_days = record_days
         existing = self.config_paths()
         added = changed = removed = 0
         for name, conf in desired.items():

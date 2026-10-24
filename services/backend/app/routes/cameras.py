@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlsplit
 
 import av
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -295,3 +296,43 @@ def camera_frame(camera_id: int, _: User = Depends(current_user), db: Session = 
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"could not grab a frame: {_redact(exc, url)}")
     return Response(buf.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@router.api_route("/{camera_id}/whep", methods=["GET", "POST", "OPTIONS", "PATCH", "DELETE"])
+async def camera_whep(camera_id: int, request: Request, _: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Proxy WebRTC WHEP negotiation to MediaMTX for this camera."""
+    camera = _get(db, camera_id)
+    cp = camera_path(camera.id, decrypt(camera.stream_url_encrypted))
+    if not cp:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "camera does not use MediaMTX")
+
+    body = await request.body()
+    webrtc_url = f"http://127.0.0.1:8889/{cp.name}/whep"
+    headers = {}
+    for h in ("content-type", "if-match"):
+        if h in request.headers:
+            headers[h] = request.headers[h]
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.request(
+                request.method,
+                webrtc_url,
+                content=body if body else None,
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"media server unavailable: {exc}") from None
+
+    out_headers = {}
+    for h in ("content-type", "location", "accept-post", "access-control-expose-headers"):
+        if h in resp.headers:
+            out_headers[h] = resp.headers[h]
+
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        headers=out_headers,
+        media_type=resp.headers.get("content-type", "application/sdp"),
+    )
+

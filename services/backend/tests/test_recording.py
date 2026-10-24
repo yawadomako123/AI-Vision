@@ -120,3 +120,21 @@ def test_shared_phone_path_recordings_survive_until_the_last_camera_goes(client)
     assert d.exists()  # camera B still records here
     client.delete(f"/api/cameras/{ids[1]}")
     assert not d.exists()
+
+
+def test_camera_whep_proxy(client, camera, monkeypatch):
+    from unittest.mock import AsyncMock, patch
+
+    mock_resp = httpx.Response(201, content=b"v=0\r\no=...", headers={"content-type": "application/sdp"})
+    with patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_req:
+        mock_req.return_value = mock_resp
+        r = client.post(
+            f"/api/cameras/{camera['id']}/whep",
+            content=b"v=0\r\no=...",
+            headers={"content-type": "application/sdp"}
+        )
+        assert r.status_code == 201
+        assert r.content == b"v=0\r\no=..."
+        assert r.headers["content-type"] == "application/sdp"
+        assert mock_req.called
+
