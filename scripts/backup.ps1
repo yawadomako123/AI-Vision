@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
   Back up the database (and optionally the event snapshots) to .\backups.
+  Works for both PostgreSQL (pg_dump, .dump) and SQLite (online backup, .sqlite) installs.
 
 .EXAMPLE
   .\scripts\backup.ps1                     # database only
@@ -19,6 +20,21 @@ $root = Resolve-Path "$PSScriptRoot\.."
 $dir = Join-Path $root "backups"
 New-Item -ItemType Directory -Force $dir | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+
+# SQLite installs (DATABASE_URL=sqlite:///... in .env, no Docker): SQLite's online backup.
+$envLine = Get-Content (Join-Path $root ".env") -ErrorAction SilentlyContinue | Where-Object { $_ -match '^\s*DATABASE_URL\s*=\s*sqlite' } | Select-Object -First 1
+if ($envLine) {
+    $out = cmd.exe /c "cd /d `"$root\services\backend`" && uv run python -m app.backup --keep $Keep 2>&1"
+    $code = $LASTEXITCODE
+    $out | ForEach-Object { Write-Host $_ }
+    if ($code -ne 0) { throw "SQLite backup failed" }
+    if ($IncludeSnapshots) {
+        $zip = Join-Path $dir "snapshots-$stamp.zip"
+        Compress-Archive -Path (Join-Path $root "storage\events\*") -DestinationPath $zip
+        Write-Host "Snapshots -> $zip"
+    }
+    exit 0
+}
 
 $dump = Join-Path $dir "aivision-$stamp.dump"
 # Custom format (-Fc): compressed, and pg_restore can restore selectively. Written inside the

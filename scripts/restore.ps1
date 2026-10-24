@@ -14,6 +14,17 @@ param(
 # Native tools write notices to stderr; PowerShell 5 would treat those as errors. Check exit codes instead.
 $ErrorActionPreference = "Continue"
 $root = Resolve-Path "$PSScriptRoot\.."
+
+# SQLite installs (DATABASE_URL=sqlite:///... in .env, no Docker): SQLite's online backup.
+$envLine = Get-Content (Join-Path $root ".env") -ErrorAction SilentlyContinue | Where-Object { $_ -match '^\s*DATABASE_URL\s*=\s*sqlite' } | Select-Object -First 1
+if ($envLine) {
+    # -Database here is a file path, e.g. storage\restore-test.db, to check a backup safely.
+    $to = if ($Database) { "--to `"$Database`"" } else { Write-Warning "Restoring over the live database. Stop the API and worker first."; "" }
+    $src = (Resolve-Path $Dump).Path
+    cmd.exe /c "cd /d `"$root\services\backend`" && uv run python -m app.backup --restore `"$src`" $to 2>&1" | ForEach-Object { Write-Host $_ }
+    if ($LASTEXITCODE -ne 0) { throw "restore failed" }
+    exit 0
+}
 $compose = @("-f", "$root\compose.yaml")
 $container = (docker compose @compose ps -q db)
 docker cp (Resolve-Path $Dump) "${container}:/tmp/restore.dump" | Out-Null

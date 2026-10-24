@@ -340,13 +340,29 @@ If Docker Desktop stops starting containers (it happens when the host runs out o
 
 Don't run the Docker `api`/`vision` containers alongside the native API and worker against the same database, or both workers will process every camera.
 
-## Backups
+## Database: SQLite or PostgreSQL
+
+New installs keep everything in **one SQLite file** (`storageivision.db`), with no database server. Tested with 4 cameras writing at once: same speed and alert delay as PostgreSQL, no "database is locked" errors. PostgreSQL in Docker is still supported (leave `DATABASE_URL` empty), e.g. for very large sites.
+
+**Moving an existing PostgreSQL install to SQLite:** stop the supervisor, then from `servicesackend`:
 
 ```powershell
-.\scripts\backup.ps1 [-IncludeSnapshots]                                  # -> backups\aivision-<time>.dump
-.\scripts\restore.ps1 -Dump backups\<file>.dump -Database restore_check   # verify into a scratch database
-.\scripts\restore.ps1 -Dump backups\<file>.dump                           # restore over live data (stop API + worker first)
+uv run python ..\..\scripts\migrate-to-sqlite.py --switch
 ```
+
+It copies every table, checks the row counts and SQLite's integrity, sets `DATABASE_URL` in `.env` (the old line stays as a comment), and leaves PostgreSQL untouched, so switching back is one line.
+
+## Backups
+
+The supervisor backs up every night (keeps 14). By hand:
+
+```powershell
+.\scripts\backup.ps1 [-IncludeSnapshots]                                       # SQLite -> backups\aivision-<time>.sqlite, PostgreSQL -> .dump
+.\scripts\restore.ps1 -Dump backups\<file> -Database storage\restore-test.db   # SQLite: check a backup into a separate file
+.\scripts\restore.ps1 -Dump backups\<file>                                   # restore over live data (stop the supervisor first)
+```
+
+With PostgreSQL, `-Database restore_check` restores into a scratch database instead. SQLite restores are integrity-checked before they replace anything.
 
 ## Security notes
 

@@ -97,7 +97,8 @@ function New-Secret([int]$bytes, [switch]$Fernet, [switch]$Simple) {
     return $s
 }
 $envPath = Join-Path $Root ".env"
-if (-not (Test-Path $envPath)) {
+$newInstall = -not (Test-Path $envPath)
+if ($newInstall) {
     Copy-Item (Join-Path $Root ".env.example") $envPath
     Info "created .env from .env.example"
 }
@@ -127,6 +128,13 @@ foreach ($k in $secrets.Keys) {
     } else {
         Ok "$k kept (already set)"
     }
+}
+# New installs keep their data in one SQLite file (no database server). Existing installs keep
+# whatever they use: switching silently would make their data look missing
+# (scripts/migrate-to-sqlite.py moves a PostgreSQL install over).
+if ($newInstall -and -not (Get-EnvValue "DATABASE_URL")) {
+    Set-EnvValue "DATABASE_URL" "sqlite:///storage/aivision.db"
+    Ok "database: SQLite file storageivision.db"
 }
 foreach ($pair in @(@("POSTGRES_DB", "aivision"), @("POSTGRES_USER", "aivision"), @("API_BASE_URL", "http://127.0.0.1:8000"))) {
     if (-not (Get-EnvValue $pair[0])) { Set-EnvValue $pair[0] $pair[1] }

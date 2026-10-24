@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # Not "localhost": on Windows it tries IPv6 first and stalls against Docker's IPv4-only port.
     postgres_host: str = "127.0.0.1"
     postgres_port: int = 5432
-    # Overrides the postgres_* fields when set (tests use sqlite).
+    # Overrides the postgres_* fields when set, e.g. sqlite:///storage/aivision.db (no Docker needed).
     database_url: str = ""
 
     # Fernet key for camera stream URLs (they contain camera passwords).
@@ -54,7 +54,14 @@ class Settings(BaseSettings):
 
     @property
     def db_url(self) -> str:
-        return self.database_url or (
+        url = self.database_url
+        if url.startswith("sqlite:///") and not url.startswith("sqlite:///:memory:"):
+            path = Path(url.removeprefix("sqlite:///"))
+            if not path.is_absolute():  # e.g. sqlite:///storage/aivision.db -> <project>/storage/aivision.db
+                path = REPO_ROOT / path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                url = f"sqlite:///{path.as_posix()}"
+        return url or (
             f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}?connect_timeout=5"
         )
