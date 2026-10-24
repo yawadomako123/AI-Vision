@@ -28,6 +28,7 @@ param(
     [switch]$WithSearch,
     [switch]$SkipServices,
     [switch]$NoStart,           # don't set up start-at-login or start it (e.g. the installer runs it as a service)
+    [switch]$Bundled,           # run by the Windows installer: dashboard and model are pre-built, only uv is needed
     [string]$BackupCopyDir = ""
 )
 
@@ -71,12 +72,12 @@ if ($Root.Length -gt 100 -and $longPaths -ne 1) {
 
 # --- 1. tools ---------------------------------------------------------------------------------
 Step "Checking the free tools"
-$tools = [ordered]@{
+$tools = if ($Bundled) { [ordered]@{ uv = "(bundled with the installer)" } } else { [ordered]@{
     git     = "winget install --id Git.Git -e"
     uv      = "winget install --id astral-sh.uv -e"
     node    = "winget install --id OpenJS.NodeJS.LTS -e"
     ffmpeg  = "winget install --id Gyan.FFmpeg -e"
-}
+} }
 $missing = @()
 foreach ($t in $tools.Keys) {
     if (Get-Command $t -ErrorAction SilentlyContinue) { Ok $t } else { $missing += $t }
@@ -193,8 +194,12 @@ if (-not $SkipServices -and -not $native) {
 Step "Installing (this takes a few minutes the first time)"
 Run "API environment (uv sync)" (Join-Path $Root "services\backend") "uv sync"
 Run "Vision worker environment (uv sync)" (Join-Path $Root "services\vision") "uv sync"
-Run "Dashboard packages (npm ci)" (Join-Path $Root "apps\web") "npm ci --no-audit --no-fund"
-Run "Building the dashboard" (Join-Path $Root "apps\web") "npm run build"
+if ($Bundled -and (Test-Path (Join-Path $Root "apps\web\dist\index.html"))) {
+    Info "dashboard: pre-built"
+} else {
+    Run "Dashboard packages (npm ci)" (Join-Path $Root "apps\web") "npm ci --no-audit --no-fund"
+    Run "Building the dashboard" (Join-Path $Root "apps\web") "npm run build"
+}
 Ok "installed"
 
 # --- 5. models ----------------------------------------------------------------------------------

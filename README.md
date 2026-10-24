@@ -184,6 +184,24 @@ Measured on this laptop (i7-1185G7, Iris Xe, search on, 6 min each):
 
 The integrated GPU manages about 9–12 detections a second in total, shared between cameras (image preparation runs on the GPU as part of the model). These figures are with constant movement; with motion skip, quiet cameras use almost nothing, leaving the GPU to the busy ones.
 
+## Windows installer (for customers)
+
+One `.exe` that sets up everything with no Docker, Git, Node.js or Python needed on the customer's PC:
+
+```powershell
+winget install --id JRSoftware.InnoSetup -e   # once, on the build PC (free)
+.\scriptsuild-installer.ps1                 # -> dist\AIVisionEdge-Setup-<date>.exe
+```
+
+The build bundles the app from git `HEAD` (commit first), the pre-built dashboard, the detection model, MediaMTX, [uv](https://github.com/astral-sh/uv) and [WinSW](https://github.com/winsw/winsw); every download is checksum-verified. The installer (needs administrator):
+
+- installs to `C:\AIVisionEdge` (a short path, because Python libraries nest deeply);
+- downloads Python and the AI libraries into that folder (about 1.5 GB, several minutes), creates the secrets and the SQLite database;
+- registers the **AI Vision Edge** Windows service, which starts at boot (even before anyone logs in) and is restarted by Windows if it stops. The service runs `supervise.ps1`;
+- allows cameras on **private** networks to reach the camera hub (TCP 8554). Everything else listens only on this PC.
+
+Re-running a newer installer upgrades in place and keeps `.env`, data and recordings. Uninstalling removes the service and the firewall rule and keeps your data. Setup log: `storage\logs\install.log`; service logs are in `storage\logs\`. Without the installer, `.\scripts\install-service.ps1` (as administrator) turns any setup.ps1 install into a service.
+
 ## Phone notifications (ntfy, free)
 
 1. Install the free **ntfy** app on your phone.
