@@ -17,3 +17,6 @@ storage/*
 *.log
 *.tsbuildinfo
 backups/
+
+# Native tools downloaded by scripts (e.g. MediaMTX)
+tools/

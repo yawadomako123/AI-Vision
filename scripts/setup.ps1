@@ -3,11 +3,13 @@
   One-command setup for AI Vision Edge on a Windows PC. Safe to run again at any time.
 
 .DESCRIPTION
-  1. Checks the free tools are installed: Git, Docker Desktop, uv, Node.js, FFmpeg (prints the
+  1. Checks the free tools are installed: Git, uv, Node.js, FFmpeg (prints the
      winget commands for anything missing).
   2. Creates .env from .env.example and generates every secret. On an existing install it only
      fills in settings that are missing or still placeholders: it never replaces your secrets.
-  3. Starts Docker Desktop if needed, then the database and MediaMTX.
+  3. New installs need no Docker: the database is a SQLite file and the camera hub (MediaMTX) is a
+     native program downloaded and checksum-verified into tools\mediamtx. Older PostgreSQL/Docker
+     installs keep using Docker Desktop.
   4. Installs the Python environments (uv) and the dashboard (npm), and builds the dashboard.
   5. Downloads and converts the detection model if it isn't there yet (~110 MB, once).
   6. Prepares the database.
@@ -19,11 +21,13 @@
   .\scripts\setup.ps1 -Yes                  # same, answering yes to everything
   .\scripts\setup.ps1 -WithSearch           # also install the plain-English search model (~650 MB)
   .\scripts\setup.ps1 -SkipServices         # files and environments only (no Docker/database)
+  .\scripts\setup.ps1 -NoStart              # everything except start-at-login / starting it
 #>
 param(
     [switch]$Yes,
     [switch]$WithSearch,
     [switch]$SkipServices,
+    [switch]$NoStart,           # don't set up start-at-login or start it (e.g. the installer runs it as a service)
     [string]$BackupCopyDir = ""
 )
 
@@ -69,7 +73,6 @@ if ($Root.Length -gt 100 -and $longPaths -ne 1) {
 Step "Checking the free tools"
 $tools = [ordered]@{
     git     = "winget install --id Git.Git -e"
-    docker  = "winget install --id Docker.DockerDesktop -e"
     uv      = "winget install --id astral-sh.uv -e"
     node    = "winget install --id OpenJS.NodeJS.LTS -e"
     ffmpeg  = "winget install --id Gyan.FFmpeg -e"
@@ -134,8 +137,13 @@ foreach ($k in $secrets.Keys) {
 # (scripts/migrate-to-sqlite.py moves a PostgreSQL install over).
 if ($newInstall -and -not (Get-EnvValue "DATABASE_URL")) {
     Set-EnvValue "DATABASE_URL" "sqlite:///storage/aivision.db"
-    Ok "database: SQLite file storageivision.db"
+    Ok "database: SQLite file storage\aivision.db"
 }
+if ($newInstall -and -not (Get-EnvValue "MEDIAMTX_MODE")) {
+    Set-EnvValue "MEDIAMTX_MODE" "native"
+    Ok "camera hub: native MediaMTX (no Docker)"
+}
+$native = (Get-EnvValue "MEDIAMTX_MODE") -eq "native" -and (Get-EnvValue "DATABASE_URL") -like "sqlite*"
 foreach ($pair in @(@("POSTGRES_DB", "aivision"), @("POSTGRES_USER", "aivision"), @("API_BASE_URL", "http://127.0.0.1:8000"))) {
     if (-not (Get-EnvValue $pair[0])) { Set-EnvValue $pair[0] $pair[1] }
 }
@@ -157,9 +165,18 @@ if ($copyDir) {
 # Plain UTF-8 without a BOM: Windows PowerShell's -Encoding utf8 adds one, which some tools misread.
 [System.IO.File]::WriteAllLines($envPath, $lines, (New-Object System.Text.UTF8Encoding $false))
 
-# --- 3. Docker services -------------------------------------------------------------------------
-if (-not $SkipServices) {
+# --- 3. camera hub and database ----------------------------------------------------------------------
+if (-not $SkipServices -and $native) {
+    Step "Camera hub (native MediaMTX, no Docker)"
+    & (Join-Path $PSScriptRoot "get-mediamtx.ps1")
+    if ($LASTEXITCODE -ne 0 -and -not (Test-Path (Join-Path $Root "tools\mediamtx\mediamtx.exe"))) { Fail "couldn't download MediaMTX" }
+    Ok "MediaMTX ready (the supervisor runs it)"
+}
+if (-not $SkipServices -and -not $native) {
     Step "Database and camera hub (Docker)"
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        Fail "This install uses Docker (PostgreSQL or MEDIAMTX_MODE=docker): winget install --id Docker.DockerDesktop -e"
+    }
     cmd.exe /c "docker info >nul 2>&1"
     if ($LASTEXITCODE -ne 0) {
         $desktop = Join-Path $env:ProgramFiles "Docker\Docker\Docker Desktop.exe"
@@ -193,14 +210,16 @@ else { Info "search model skipped (optional: run setup with -WithSearch)" }
 # --- 6. database ----------------------------------------------------------------------------------
 if (-not $SkipServices) {
     Step "Database"
-    $deadline = (Get-Date).AddMinutes(2)
-    do { Start-Sleep 2; cmd.exe /c "cd /d `"$Root`" && docker compose exec -T db pg_isready >nul 2>&1" } while ($LASTEXITCODE -ne 0 -and (Get-Date) -lt $deadline)
+    if (-not ((Get-EnvValue "DATABASE_URL") -like "sqlite*")) {
+        $deadline = (Get-Date).AddMinutes(2)
+        do { Start-Sleep 2; cmd.exe /c "cd /d `"$Root`" && docker compose exec -T db pg_isready >nul 2>&1" } while ($LASTEXITCODE -ne 0 -and (Get-Date) -lt $deadline)
+    }
     Run "Preparing tables (migrations)" (Join-Path $Root "services\backend") "uv run alembic upgrade head"
     Ok "database ready"
 }
 
 # --- 7. run it ----------------------------------------------------------------------------------
-if (-not $SkipServices) {
+if (-not $SkipServices -and -not $NoStart) {
     Step "Running it"
     if (Ask "Start AI Vision Edge automatically when you log in to Windows?") {
         & (Join-Path $PSScriptRoot "install-autostart.ps1") | ForEach-Object { Info $_ }

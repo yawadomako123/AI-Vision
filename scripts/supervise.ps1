@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-  Runs AI Vision Edge unattended: starts the Docker services, the API and the vision worker,
-  and restarts any of them that crash or hang.
+  Runs AI Vision Edge unattended: starts the camera hub (MediaMTX) and database, the API and the
+  vision worker, and restarts any of them that crash or hang. Native mode (MEDIAMTX_MODE=native
+  and a SQLite DATABASE_URL in .env) needs no Docker at all.
 
 .DESCRIPTION
   - Starts Docker Desktop if it isn't running and waits for it (a minute or two after a reboot),
@@ -51,13 +52,43 @@ if (-not $owned) {
 }
 if ((Test-Path $SupLog) -and (Get-Item $SupLog).Length -gt 5MB) { Move-Item -Force $SupLog "$SupLog.prev" }
 
-# --- processes -------------------------------------------------------------------------------
-$Services = @{
-    api    = @{ File = "powershell.exe"; Args = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$Root\scripts\run-api.ps1`"");
-                Dir = $Root; Proc = $null; Fails = 0; NextStart = [datetime]::MinValue; StartedAt = $null; HealthFails = 0 }
-    worker = @{ File = "uv"; Args = @("run", "python", "-m", "app.main");
-                Dir = (Join-Path $Root "services\vision"); Proc = $null; Fails = 0; NextStart = [datetime]::MinValue; StartedAt = $null }
+# --- mode: native (no Docker) or Docker ---------------------------------------------------------
+# Native: SQLite database + MediaMTX as tools\mediamtx\mediamtx.exe (scripts\get-mediamtx.ps1),
+# run and restarted by this supervisor like the API and worker. Docker is then never touched.
+function Get-EnvValue([string]$key) {
+    $line = Get-Content (Join-Path $Root ".env") -ErrorAction SilentlyContinue |
+        Where-Object { $_ -match "^\s*$key\s*=" } | Select-Object -First 1
+    if ($line) { return ($line -split "=", 2)[1].Trim() } else { return "" }
 }
+$MediaExe = Join-Path $Root "tools\mediamtx\mediamtx.exe"
+$NativeMedia = (Get-EnvValue "MEDIAMTX_MODE") -eq "native"
+$SqliteDb = (Get-EnvValue "DATABASE_URL") -like "sqlite*"
+$NeedDocker = -not ($NativeMedia -and $SqliteDb)
+if ($NativeMedia) {
+    if (-not (Test-Path $MediaExe)) { Write-Host "MEDIAMTX_MODE=native but $MediaExe is missing: run scripts\get-mediamtx.ps1"; exit 1 }
+    # Same settings Docker passes in compose.yaml; inherited by mediamtx.exe.
+    $env:MTX_AUTHINTERNALUSERS_1_PASS = Get-EnvValue "MEDIAMTX_PUBLISH_PASSWORD"
+    $env:MTX_AUTHINTERNALUSERS_2_PASS = Get-EnvValue "MEDIAMTX_API_PASSWORD"
+    $rec = (Join-Path $Root "storage\recordings").Replace("\", "/")
+    $env:MTX_PATHDEFAULTS_RECORDPATH = "$rec/%path/%Y-%m-%d_%H-%M-%S-%f"
+    # Like compose.yaml: only RTSP (cameras and phones publish) is open to the network; the control
+    # API, playback server and browser video listen on this PC only (remote viewing goes via Tailscale).
+    $env:MTX_APIADDRESS = "127.0.0.1:9997"
+    $env:MTX_PLAYBACKADDRESS = "127.0.0.1:9996"
+    $env:MTX_HLSADDRESS = "127.0.0.1:8888"
+    $env:MTX_WEBRTCADDRESS = "127.0.0.1:8889"
+}
+
+# --- processes -------------------------------------------------------------------------------
+$Services = [ordered]@{}
+if ($NativeMedia) {
+    $Services.mediamtx = @{ File = $MediaExe; Args = @("`"$Root\infra\mediamtx\mediamtx.yml`"");
+                            Dir = $Root; Proc = $null; Fails = 0; NextStart = [datetime]::MinValue; StartedAt = $null }
+}
+$Services.api = @{ File = "powershell.exe"; Args = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$Root\scripts\run-api.ps1`"");
+                Dir = $Root; Proc = $null; Fails = 0; NextStart = [datetime]::MinValue; StartedAt = $null; HealthFails = 0 }
+$Services.worker = @{ File = "uv"; Args = @("run", "python", "-m", "app.main");
+                Dir = (Join-Path $Root "services\vision"); Proc = $null; Fails = 0; NextStart = [datetime]::MinValue; StartedAt = $null }
 
 function Stop-Tree($proc) {
     if ($proc -and -not $proc.HasExited) {
@@ -145,10 +176,14 @@ function Invoke-NightlyBackup {
 # --- main loop -------------------------------------------------------------------------------
 try {
     Log "supervisor starting in $Root"
-    if (-not (Start-Docker)) { Log "Docker didn't start within 10 min; continuing (the API will retry the database)" }
+    if ($NeedDocker) {
+        if (-not (Start-Docker)) { Log "Docker didn't start within 10 min; continuing (the API will retry the database)" }
+    } else {
+        Log "native mode: SQLite + mediamtx.exe, no Docker"
+    }
     while ($true) {
       try {
-        foreach ($name in @("api", "worker")) {
+        foreach ($name in @($Services.Keys)) {
             $s = $Services[$name]
             if ($null -eq $s.Proc) {
                 if ((Get-Date) -ge $s.NextStart) { Start-Service-Proc $name }
@@ -176,7 +211,7 @@ try {
         if ((Get-Date) -ge $NextBackupTry) { Invoke-NightlyBackup }
         # Docker Desktop can quit later (updates, a crash, someone closing it): the database and
         # MediaMTX go with it. Check every minute and bring them back.
-        if ((Get-Date) -ge $NextDockerCheck) {
+        if ($NeedDocker -and (Get-Date) -ge $NextDockerCheck) {
             $NextDockerCheck = (Get-Date).AddMinutes(1)
             cmd.exe /c "docker info >nul 2>&1"
             $dockerUp = $LASTEXITCODE -eq 0

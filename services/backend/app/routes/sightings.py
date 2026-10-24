@@ -60,7 +60,8 @@ def check_watchlist(db: Session, s: Sighting) -> None:
     if w is None or score < WATCH_MATCH:
         return
     publish_event(db, Event(
-        external_id=f"plate-{s.id}", camera_id=s.camera_id, event_type="plate_watchlist", severity="high",
+        # Unique even if SQLite reuses a deleted sighting's id (events outlive sightings).
+        external_id=f"plate-{uuid.uuid4().hex}", camera_id=s.camera_id, event_type="plate_watchlist", severity="high",
         occurred_at=s.first_seen, rule_name=w.label, object_class=s.object_class, confidence=s.plate_confidence,
         details={"plate": s.plate, "watched_plate": w.plate, "label": w.label, "match": round(score, 2),
                  "sighting_id": s.id},

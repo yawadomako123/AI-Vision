@@ -91,7 +91,7 @@ IP cameras are routed through MediaMTX automatically, so the camera serves one c
 
 ## First-time setup
 
-**The easy way (Windows):** install the free tools (Git, Docker Desktop, uv, Node.js, FFmpeg; the script prints the exact `winget` commands for anything missing), then:
+**The easy way (Windows):** install the free tools (Git, uv, Node.js, FFmpeg; the script prints the exact `winget` commands for anything missing). **No Docker needed:** the database is a SQLite file and the camera hub (MediaMTX) is a native program the script downloads and checksum-verifies. Then:
 
 ```powershell
 git clone https://github.com/yawadomako123/AI-Vision.git
@@ -99,7 +99,7 @@ cd AI-Vision
 .\scripts\setup.ps1
 ```
 
-It generates all secrets into `.env`, starts the database and MediaMTX, installs everything, downloads the detection model, prepares the database, and can turn on start-at-login and a cloud-folder copy of the nightly backups. It's safe to run again: it never replaces secrets you already have. Then open http://127.0.0.1:8000 and create your admin account. Add `-WithSearch` for the plain-English search model.
+It generates all secrets into `.env`, sets up SQLite and the native MediaMTX, installs everything, downloads the detection model, prepares the database, and can turn on start-at-login and a cloud-folder copy of the nightly backups. It's safe to run again: it never replaces secrets you already have. Then open http://127.0.0.1:8000 and create your admin account. Add `-WithSearch` for the plain-English search model.
 
 **By hand** (what the script does):
 
@@ -342,9 +342,9 @@ Don't run the Docker `api`/`vision` containers alongside the native API and work
 
 ## Database: SQLite or PostgreSQL
 
-New installs keep everything in **one SQLite file** (`storageivision.db`), with no database server. Tested with 4 cameras writing at once: same speed and alert delay as PostgreSQL, no "database is locked" errors. PostgreSQL in Docker is still supported (leave `DATABASE_URL` empty), e.g. for very large sites.
+New installs keep everything in **one SQLite file** (`storage\aivision.db`), with no database server. Tested with 4 cameras writing at once: same speed and alert delay as PostgreSQL, no "database is locked" errors. PostgreSQL in Docker is still supported (leave `DATABASE_URL` empty), e.g. for very large sites.
 
-**Moving an existing PostgreSQL install to SQLite:** stop the supervisor, then from `servicesackend`:
+**Moving an existing PostgreSQL install to SQLite:** stop the supervisor, then from `services\backend`:
 
 ```powershell
 uv run python ..\..\scripts\migrate-to-sqlite.py --switch
