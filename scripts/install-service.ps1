@@ -57,6 +57,59 @@ $env:UV_PYTHON_PREFERENCE = "only-managed"
 $uvDir = Join-Path $Root "tools\uv"
 $env:PATH = "$uvDir;$env:PATH"
 
+# The Windows installer shows real progress from these files: install-progress.txt ("percent|counter|text",
+# refreshed every 2 s by a watcher reading this log and the download folders) and
+# install-result.txt ("ok" or the error) when this script finishes.
+$progressFile = Join-Path $Root "storage\logs\install-progress.txt"
+$resultFile = Join-Path $Root "storage\logs\install-result.txt"
+Remove-Item $progressFile, $resultFile -ErrorAction SilentlyContinue
+$watcher = Start-Job -ArgumentList $Root, $progressFile -ScriptBlock {
+    param($Root, $file)
+    $log = Join-Path $Root "storage\logs\install.log"
+    $dirs = @("tools\uv-cache", "tools\python") | ForEach-Object { Join-Path $Root $_ }
+    $expectedMB = 800  # Python + both environments, unpacked (measured; the two share files via hard links)
+    $samples = New-Object System.Collections.Generic.List[object]
+    $tick = 0
+    while ($true) {
+        $bytes = 0
+        foreach ($d in $dirs) {
+            if (Test-Path $d) {
+                foreach ($f in ([IO.DirectoryInfo]$d).EnumerateFiles("*", "AllDirectories")) { $bytes += $f.Length }
+            }
+        }
+        $mb = [math]::Round($bytes / 1MB)
+        $now = Get-Date
+        $samples.Add(@($now, $mb))
+        while ($samples.Count -gt 2 -and ($now - $samples[0][0]).TotalSeconds -gt 30) { $samples.RemoveAt(0) }
+        $secs = ($now - $samples[0][0]).TotalSeconds
+        $rate = if ($secs -gt 0) { ($mb - $samples[0][1]) / $secs } else { 0 }
+
+        $last = Get-Content $log -Tail 40 -ErrorAction SilentlyContinue |
+            Where-Object { $_ -match '^(== |       )\S' } | Select-Object -Last 1
+        $pct, $text = 2, "Preparing settings and secrets"
+        switch -Regex ($last) {
+            'environment \(uv sync\)' {
+                $pct = 3 + [math]::Min(87, [math]::Floor(87 * $mb / $expectedMB))
+                $text = "Downloading and unpacking Python and the AI libraries: $mb MB of about $expectedMB MB"
+                if ($rate -ge 0.1) {
+                    $text += (" ({0:N1} MB/s" -f $rate)
+                    if ($mb -lt $expectedMB) { $text += ", about $([math]::Max(1, [math]::Ceiling(($expectedMB - $mb) / $rate / 60))) min left" }
+                    $text += ")"
+                } elseif ($samples.Count -gt 5) { $text += " (checking and linking files)" }
+            }
+            'dashboard|installed|AI models|detection model|search model' { $pct, $text = 92, "Checking the AI model" }
+            'Database|Preparing tables' { $pct, $text = 95, "Preparing the database" }
+            'Registering the Windows service' { $pct, $text = 97, "Registering the Windows service" }
+            'firewall' { $pct, $text = 98, "Allowing cameras on your network to connect" }
+            'Starting the service' { $pct, $text = 99, "Starting AI Vision Edge" }
+        }
+        $tick++
+        try { [IO.File]::WriteAllText($file, "$pct|$tick|$text") } catch {}
+        Start-Sleep 2
+    }
+}
+
+try {
 # 2. Everything else (idempotent: keeps existing .env secrets and data).
 Remove-ServiceIfPresent  # an upgrade replaces the files the old service was running
 $global:LASTEXITCODE = 0
@@ -64,6 +117,7 @@ $global:LASTEXITCODE = 0
 if ($LASTEXITCODE -ne 0) { throw "setup failed (see above)" }
 
 # 3. The service.
+Write-Host "== Registering the Windows service"
 $xml = @"
 <service>
   <id>$ServiceName</id>
@@ -92,6 +146,7 @@ Set-Content -Path ([IO.Path]::ChangeExtension($WinSW, ".xml")) -Value $xml -Enco
 if ($LASTEXITCODE -ne 0) { throw "service registration failed" }
 
 # 4. Cameras and phones on the local network publish to RTSP 8554 (private networks only).
+Write-Host "== Allowing cameras through the firewall (RTSP 8554, private networks)"
 netsh advfirewall firewall delete rule name="$RuleName" | Out-Null
 netsh advfirewall firewall add rule name="$RuleName" dir=in action=allow protocol=TCP localport=8554 profile=private | Out-Null
 
@@ -99,7 +154,18 @@ netsh advfirewall firewall add rule name="$RuleName" dir=in action=allow protoco
 Get-ChildItem "C:\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\AI Vision Edge.lnk" -ErrorAction SilentlyContinue |
     ForEach-Object { Remove-Item $_.FullName -Force; Write-Host "Removed old start-at-login shortcut: $($_.FullName)" }
 
+Write-Host "== Starting the service"
 & $WinSW start
+if ($LASTEXITCODE -ne 0) { throw "the service didn't start (see storage\logs\AIVisionEdge.wrapper.log)" }
 Write-Host ""
 Write-Host "AI Vision Edge is installed as a Windows service and starting (give it a minute)."
 Write-Host "Open http://127.0.0.1:8000 and create your admin account."
+[IO.File]::WriteAllText($resultFile, "ok")
+} catch {
+    Write-Host "!! $_"
+    [IO.File]::WriteAllText($resultFile, "$_")
+    $failed = $true
+} finally {
+    Stop-Job $watcher -ErrorAction SilentlyContinue; Remove-Job $watcher -Force -ErrorAction SilentlyContinue
+}
+if ($failed) { exit 1 }
