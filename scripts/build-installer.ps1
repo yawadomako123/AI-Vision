@@ -90,9 +90,18 @@ New-Item -ItemType Directory -Force (Join-Path $Stage "tools\winsw") | Out-Null
 Copy-Item $winsw (Join-Path $Stage "tools\winsw\AIVisionEdge.exe")
 
 Step "Compiling the installer"
-$out = Join-Path $Root "dist"
-& $iscc "/DSourceDir=$Stage" "/DAppVersion=$Version" "/DOutputDir=$out" (Join-Path $Root "installer\AIVisionEdge.iss")
+$tempOut = Join-Path $Build "output"
+$dist = Join-Path $Root "dist"
+New-Item -ItemType Directory -Force $tempOut, $dist | Out-Null
+for ($attempt = 1; $attempt -le 3; $attempt++) {
+    & $iscc "/DSourceDir=$Stage" "/DAppVersion=$Version" "/DOutputDir=$tempOut" (Join-Path $Root "installer\AIVisionEdge.iss")
+    if ($LASTEXITCODE -eq 0) { break }
+    Write-Warning "Inno Setup failed (attempt $attempt of 3), retrying in 3s..."
+    Start-Sleep -Seconds 3
+}
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
-$exe = Join-Path $out "AIVisionEdge-Setup-$Version.exe"
+$tempExe = Join-Path $tempOut "AIVisionEdge-Setup-$Version.exe"
+$exe = Join-Path $dist "AIVisionEdge-Setup-$Version.exe"
+Move-Item -Force $tempExe $exe
 Write-Host ""
 Write-Host "Built $exe ($([math]::Round((Get-Item $exe).Length / 1MB)) MB)" -ForegroundColor Green
