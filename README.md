@@ -200,7 +200,7 @@ The build bundles the app from git `HEAD` (commit first), the pre-built dashboar
 - registers the **AI Vision Edge** Windows service, which starts at boot (even before anyone logs in) and is restarted by Windows if it stops. The service runs `supervise.ps1`;
 - allows cameras on **private** networks to reach the camera hub (TCP 8554). Everything else listens only on this PC.
 
-Re-running a newer installer upgrades in place and keeps `.env`, data and recordings. Uninstalling removes the service and the firewall rule and keeps your data. Setup log: `storage\logs\install.log`; service logs are in `storage\logs\`. Without the installer, `.\scripts\install-service.ps1` (as administrator) turns any setup.ps1 install into a service.
+Re-running a newer installer upgrades in place and keeps `.env`, data and recordings. Uninstalling removes the service and the firewall rule and keeps your data. Setup log: `storage\logs\install.log`; service logs are in `storage\logs\`. Without the installer, `.\scripts\install-service.ps1` (as administrator) turns any setup.ps1 install into a service. The installer doesn't pick a cloud folder for backup copies; to add one, set `BACKUP_COPY_DIR` in `C:\AIVisionEdge\.env` and restart the **AI Vision Edge** service.
 
 ## Phone notifications (ntfy, free)
 

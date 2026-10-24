@@ -52,7 +52,7 @@ Name: "{group}\Uninstall AI Vision Edge"; Filename: "{uninstallexe}"
 [Run]
 Filename: "powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install-service.ps1"""; \
-  StatusMsg: "Setting up: downloading Python and the AI libraries (about 1.5 GB) and starting the service. This takes several minutes..."; \
+  StatusMsg: "Downloading the AI libraries (1.5 GB, often 10+ minutes). The bar stays full until done."; \
   Flags: runhidden waituntilterminated
 Filename: "http://127.0.0.1:8000"; Description: "Open the dashboard"; Flags: shellexec postinstall skipifsilent nowait
 

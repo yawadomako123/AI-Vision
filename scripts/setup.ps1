@@ -151,7 +151,8 @@ foreach ($pair in @(@("POSTGRES_DB", "aivision"), @("POSTGRES_USER", "aivision")
 
 # Nightly backups also copied to a cloud-synced folder (survives a dead disk).
 $copyDir = if ($BackupCopyDir) { $BackupCopyDir } else { Get-EnvValue "BACKUP_COPY_DIR" }
-if (-not $copyDir) {
+# Not from the installer: it answers yes to everything, and a cloud folder is the customer's choice.
+if (-not $copyDir -and -not $Bundled) {
     $candidates = @()
     if ($env:OneDrive) { $candidates += (Join-Path $env:OneDrive "AI Vision backups") }
     if (Test-Path "G:\My Drive") { $candidates += "G:\My Drive\AI Vision backups" }
