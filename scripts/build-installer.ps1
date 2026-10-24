@@ -64,6 +64,14 @@ $model = Join-Path $Root "models\rfdetr-nano.onnx"
 if (-not (Test-Path $model)) { throw "missing ${model}: run setup.ps1 once to create it" }
 Copy-Item $model (Join-Path $Stage "models\rfdetr-nano.onnx")
 
+# Optional in the installer (a ticked checkbox): search, vehicle colour/type and plates need it, and
+# customers can't export it themselves without the ~2 GB conversion tools.
+Step "Search model (SigLIP)"
+$siglip = Join-Path $Root "models\siglip"
+if (-not (Test-Path "$siglip\vision.onnx")) { throw "missing $siglip\vision.onnx: run setup.ps1 -WithSearch once to create it" }
+New-Item -ItemType Directory -Force (Join-Path $Stage "models\siglip") | Out-Null
+Get-ChildItem $siglip -File | Copy-Item -Destination (Join-Path $Stage "models\siglip")  # not .ov_cache (per-PC)
+
 Step "MediaMTX"
 & (Join-Path $PSScriptRoot "get-mediamtx.ps1")
 New-Item -ItemType Directory -Force (Join-Path $Stage "tools\mediamtx") | Out-Null

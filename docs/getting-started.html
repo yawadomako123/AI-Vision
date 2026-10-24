@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started with AI Vision Edge</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --card: #ffffff; --text: #1d2330; --muted: #5d6677; --line: #e2e6ec;
+    --accent: #2563eb; --accent-soft: #e8f0fe; --warn: #9a5b00; --warn-soft: #fff4e0; --code: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11141a; --card: #191d25; --text: #e6e9ef; --muted: #9aa3b2; --line: #2a303b;
+      --accent: #6ea0ff; --accent-soft: #1d2a44; --warn: #f0b960; --warn-soft: #2e2416; --code: #232833;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 820px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 8px; }
+  h2 { font-size: 21px; margin: 0 0 12px; display: flex; gap: 12px; align-items: center; }
+  h3 { font-size: 16px; margin: 20px 0 6px; }
+  .lead { color: var(--muted); margin: 0 0 24px; }
+  .num { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+         display: inline-flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 600; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; margin: 0 0 16px; }
+  ol, ul { padding-left: 22px; margin: 8px 0; }
+  li { margin: 4px 0; }
+  b.ui { font-weight: 600; }
+  code { background: var(--code); border-radius: 4px; padding: 1px 6px; font: 14px Consolas, monospace; overflow-wrap: anywhere; }
+  pre { background: var(--code); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font: 14px Consolas, monospace; margin: 8px 0; }
+  .tip, .warn { border-radius: 8px; padding: 10px 14px; margin: 12px 0 4px; font-size: 15px; }
+  .tip { background: var(--accent-soft); }
+  .warn { background: var(--warn-soft); }
+  .warn b:first-child { color: var(--warn); }
+  nav { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 22px; margin: 0 0 24px; }
+  nav ol { columns: 2; column-gap: 32px; margin: 4px 0; }
+  @media (max-width: 600px) { nav ol { columns: 1; } h1 { font-size: 25px; } }
+  a { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; margin: 8px 0; }
+  th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 6px 8px 6px 0; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+<h1>Getting started with AI Vision Edge</h1>
+<p class="lead">Your cameras, watched by AI on this computer. Nothing is sent to the cloud. Follow these steps once, in order. Most people are done in 20–30 minutes.</p>
+
+<nav>
+  <b>Steps</b>
+  <ol>
+    <li><a href="#install">Install</a></li>
+    <li><a href="#awake">Keep this PC awake</a></li>
+    <li><a href="#account">Create the admin account</a></li>
+    <li><a href="#cameras">Add your cameras</a></li>
+    <li><a href="#rules">Tell it what to watch for</a></li>
+    <li><a href="#phone">Get alerts on your phone</a></li>
+    <li><a href="#recording">Recording and playback</a></li>
+    <li><a href="#search">Search, vehicles and plates</a></li>
+    <li><a href="#users">Add other people</a></li>
+    <li><a href="#remote">See it from anywhere</a></li>
+    <li><a href="#daily">Day to day</a></li>
+    <li><a href="#help">If something's wrong</a></li>
+  </ol>
+</nav>
+
+<section id="install">
+  <h2><span class="num">1</span>Install</h2>
+  <p><b>You need:</b> a Windows 10 or 11 PC (64-bit, 8 GB memory or more) that can stay on, about 3 GB of free disk plus room for recordings, an internet connection during setup, and your cameras on the same router or Wi-Fi as the PC.</p>
+  <ol>
+    <li>Double-click <code>AIVisionEdge-Setup.exe</code>.</li>
+    <li>If Windows shows <b class="ui">Windows protected your PC</b>, click <b class="ui">More info</b> → <b class="ui">Run anyway</b>. Then click <b class="ui">Yes</b> when Windows asks for permission.</li>
+    <li>Keep the install folder as <code>C:\AIVisionEdge</code>.</li>
+    <li>Keep <b class="ui">Plain-English search, vehicle colour/type and number plates</b> ticked unless the PC is low on memory or disk.</li>
+    <li>Wait while it sets up. The bar and the text under it show how much has been downloaded, the speed and the time left. On a typical connection this takes 5–15 minutes.</li>
+    <li>Click <b class="ui">Finish</b>. The dashboard opens in your browser.</li>
+  </ol>
+  <div class="tip">AI Vision Edge runs as a Windows service: it starts by itself when the PC turns on, even before anyone signs in, and restarts itself if anything goes wrong. You never need to "open" it, just the dashboard.</div>
+  <div class="warn"><b>Setup failed?</b> It's usually the internet connection. Run the installer again: it keeps everything already downloaded and continues.</div>
+</section>
+
+<section id="awake">
+  <h2><span class="num">2</span>Keep this PC awake</h2>
+  <p>A sleeping PC can't watch cameras.</p>
+  <ol>
+    <li>Open <b class="ui">Settings → System → Power</b> (on Windows 11: <b class="ui">Power &amp; battery</b>) → <b class="ui">Screen and sleep</b>.</li>
+    <li>Set <b class="ui">When plugged in, put my device to sleep after</b> to <b class="ui">Never</b>. The screen can still turn off.</li>
+    <li>Keep a laptop plugged in.</li>
+  </ol>
+  <p>It's fine to lock the PC or sign out. The cameras keep being watched.</p>
+</section>
+
+<section id="account">
+  <h2><span class="num">3</span>Create the admin account</h2>
+  <ol>
+    <li>Open the dashboard: <a href="http://127.0.0.1:8000">http://127.0.0.1:8000</a>, or <b class="ui">Start → AI Vision Edge dashboard</b>. If it doesn't load, wait a minute and refresh: the first start is slower.</li>
+    <li>The first time, it asks you to <b class="ui">Create the admin account</b>. Choose a username and a strong password, then click <b class="ui">Create account</b>.</li>
+  </ol>
+  <div class="warn"><b>Write the password down somewhere safe.</b> The admin account controls everything, including other people's access.</div>
+</section>
+
+<section id="cameras">
+  <h2><span class="num">4</span>Add your cameras</h2>
+  <h3>The easy way: Find cameras</h3>
+  <ol>
+    <li>Make sure the camera is powered and connected to the same router or Wi-Fi as this PC.</li>
+    <li>In the dashboard go to <b class="ui">Cameras → Find cameras</b>. It searches your network for about 5 seconds.</li>
+    <li>Click your camera, enter the <b class="ui">Camera username</b> and <b class="ui">Camera password</b> (from the camera's box or its app), and click <b class="ui">Get streams</b>.</li>
+    <li>Pick the stream marked <b class="ui">recommended</b>. It's the lowest resolution, which is the lightest for the AI and is plenty for detection.</li>
+    <li>Give it a <b class="ui">Name</b> (for example <i>Front door</i>), click <b class="ui">Check stream</b>, and when it says <b class="ui">Stream OK</b> click <b class="ui">Add camera</b>.</li>
+  </ol>
+  <div class="tip"><b>Camera not found?</b> Many cameras have ONVIF/RTSP switched off at first. In the camera's own app, turn on <b>ONVIF</b> or <b>RTSP</b>. Tapo and Reolink also need a separate "camera account" (Tapo: <i>Advanced settings → Camera account</i>). Then click <b class="ui">Search again</b>.</div>
+  <h3>Adding a camera by its address</h3>
+  <p>Click <b class="ui">Add camera</b> and enter its stream address, for example <code>rtsp://user:password@192.168.1.50:554/stream2</code>. The camera's manual or its maker's website lists the address. Use the low-resolution "sub stream" if there is one. Passwords are stored encrypted and never shown again.</p>
+  <h3>Using an Android phone as a camera (optional)</h3>
+  <ol>
+    <li>Install <b>Larix Broadcaster</b> (free) on the phone.</li>
+    <li>On the PC, find its address: open Command Prompt, type <code>ipconfig</code>, and note the <b>IPv4 Address</b> (for example <code>192.168.1.20</code>).</li>
+    <li>Open <code>C:\AIVisionEdge\.env</code> in Notepad and copy the value after <code>MEDIAMTX_PUBLISH_PASSWORD=</code>. Don't change anything in that file.</li>
+    <li>In Larix, add a connection: URL <code>rtsp://192.168.1.20:8554/cam1</code> (your PC's address), user <code>publisher</code>, the password you copied. Set video to 640×480, 15 fps.</li>
+    <li>In the dashboard, add a camera with the address <code>rtsp://127.0.0.1:8554/cam1</code>. For a second phone use <code>cam2</code>, and so on.</li>
+  </ol>
+  <div class="tip">If the phone can't connect, your Wi-Fi may be set as a public network on the PC. Open <b class="ui">Settings → Network &amp; internet → Wi-Fi</b>, click your network and set <b class="ui">Network profile type</b> to <b class="ui">Private</b>. Cameras can only connect to this PC on private networks.</div>
+  <p>Mount cameras high and angled down. Only film places you're allowed to, and put up a notice where the law requires one.</p>
+</section>
+
+<section id="rules">
+  <h2><span class="num">5</span>Tell it what to watch for</h2>
+  <p>On <b class="ui">Cameras</b>, click <b class="ui">Rules</b> on a camera. You'll see a still image from it. Pick a rule type (Occupancy and Privacy mask are under <b class="ui">More rule types</b>) and click the corners on the image:</p>
+  <table>
+    <tr><th>Rule</th><th>What it does</th></tr>
+    <tr><td><b>Zone</b></td><td>Alert when someone enters an area, for example the driveway at night.</td></tr>
+    <tr><td><b>Line</b></td><td>Count people crossing, for example in and out of a shop door. It can also alert.</td></tr>
+    <tr><td><b>Loitering</b></td><td>Alert when someone stays in an area too long.</td></tr>
+    <tr><td><b>Occupancy</b></td><td>Alert when too many people are inside an area.</td></tr>
+    <tr><td><b>Privacy mask</b></td><td>Black out an area, for example a neighbour's window. It's never analysed or saved.</td></tr>
+  </table>
+  <ul>
+    <li>Press <b>Enter</b> (or <b class="ui">Finish</b>) to save the shape, <b>Backspace</b> to undo a corner, <b>Esc</b> to cancel.</li>
+    <li>Choose <b class="ui">Severity</b>: <b>High</b> alerts go to your phone by default.</li>
+    <li>Under <b class="ui">When the rule is active</b>, choose <b class="ui">Only at certain times</b> for night-only rules. Overnight times such as 22:00–06:00 work.</li>
+    <li>To change a rule, click it and drag its corners.</li>
+  </ul>
+  <p>Too many alerts, or people counted twice? Go to <b class="ui">Settings → Performance</b> and set <b class="ui">Detection sensitivity</b> lower. Missing people in the dark? Set it higher.</p>
+</section>
+
+<section id="phone">
+  <h2><span class="num">6</span>Get alerts on your phone</h2>
+  <ol>
+    <li>Install the free <b>ntfy</b> app on your phone (Play Store, F-Droid or App Store).</li>
+    <li>In the dashboard, open <b class="ui">Settings → Phone notifications</b>. Click <b class="ui">Generate</b> to create a private topic name, tick <b class="ui">Send alerts to my phone</b>, and click <b class="ui">Save</b>.</li>
+    <li>In the ntfy app, tap <b>+</b> and subscribe to that exact topic name.</li>
+    <li>Back in the dashboard, click <b class="ui">Send test</b>. You should get a notification within seconds.</li>
+  </ol>
+  <p>You'll also get a short daily summary each morning, and a warning if a camera is covered or moved, if the AI stops, or if the disk is nearly full.</p>
+  <div class="warn"><b>Keep the topic name secret.</b> Anyone who knows it can read your alerts.</div>
+</section>
+
+<section id="recording">
+  <h2><span class="num">7</span>Recording and playback</h2>
+  <ol>
+    <li>Open <b class="ui">Settings → Recording</b> and tick <b class="ui">Record all cameras continuously</b>.</li>
+    <li>Set <b class="ui">Keep recordings (days)</b> and a <b class="ui">Storage limit (GB)</b>. Plan on about 5–10 GB per camera per day. The oldest recordings are deleted first, and 5 GB of disk is always kept free.</li>
+    <li>Watch recordings on the <b class="ui">Playback</b> page: pick a camera and a day, then click the timeline.</li>
+  </ol>
+  <p>Even without continuous recording, every alert keeps a snapshot and a short clip.</p>
+</section>
+
+<section id="search">
+  <h2><span class="num">8</span>Search, vehicles and number plates</h2>
+  <ol>
+    <li>Open <b class="ui">Settings → Performance</b> and tick <b class="ui">Plain-English search</b>. It needs about 0.5–0.7 GB of extra memory.</li>
+    <li>On the <b class="ui">Search</b> page, describe what you're looking for, for example <i>person in a red jacket</i> or <i>white van</i>. Vehicles also get a colour and type you can filter by.</li>
+    <li>For number plates: open <b class="ui">Settings → Number plates</b> and tick <b class="ui">Read number plates on vehicles</b>. The first time, it downloads its reading model, so the PC needs internet then. It works best with a camera aimed at a gate or entrance.</li>
+    <li>Add plates to the <b class="ui">Watchlist</b> to get an alert when one is seen.</li>
+  </ol>
+  <p>If you unticked search during install, these options won't work until you reinstall with it ticked.</p>
+  <div class="warn"><b>Plates are personal data.</b> Put up a camera notice, and set how long sightings are kept in <b class="ui">Settings → Data retention</b>.</div>
+</section>
+
+<section id="users">
+  <h2><span class="num">9</span>Add other people</h2>
+  <p>In <b class="ui">Settings → Users</b>, give each person their own account. Don't share yours.</p>
+  <ul>
+    <li><b>Operator:</b> can watch live, review and acknowledge alerts, search and play back recordings.</li>
+    <li><b>Admin:</b> can also change cameras, rules, settings and users.</li>
+  </ul>
+  <p>Every sign-in and change is recorded in <b class="ui">Settings → Audit log</b>.</p>
+</section>
+
+<section id="remote">
+  <h2><span class="num">10</span>See it from anywhere (optional)</h2>
+  <p>The dashboard only answers on this PC. To use it from your phone, at home or away, use Tailscale (free). It opens no ports to the internet.</p>
+  <ol>
+    <li>Install <b>Tailscale</b> on this PC and on your phone, and sign in with the same account on both.</li>
+    <li>On this PC, open Command Prompt and run:
+      <pre>tailscale serve --bg 8000</pre>
+      It prints an address like <code>https://my-pc.tail1234.ts.net</code>. If it asks you to turn on HTTPS for your tailnet, open the link it shows, then run the command again.</li>
+    <li>Open that address on your phone. To install it like an app: in Chrome on Android choose <b class="ui">Add to Home screen</b>; on iPhone, in Safari choose <b class="ui">Share → Add to Home Screen</b>.</li>
+    <li>Paste the address into <b class="ui">Settings → Phone notifications → Dashboard link</b>. Alerts then get <b class="ui">Acknowledge</b> and <b class="ui">Mute camera 1 h</b> buttons, and tapping one opens the dashboard.</li>
+  </ol>
+</section>
+
+<section id="daily">
+  <h2><span class="num">11</span>Day to day</h2>
+  <table>
+    <tr><th>Page</th><th>Use it for</th></tr>
+    <tr><td><b>Overview</b></td><td>Today at a glance: alerts, cameras online, people in and out.</td></tr>
+    <tr><td><b>Live</b></td><td>All cameras at once.</td></tr>
+    <tr><td><b>Events</b></td><td>Every alert with its snapshot and clip. Mark each one <b class="ui">Acknowledge</b> or <b class="ui">False alarm</b>. False alarms help you tune your rules.</td></tr>
+    <tr><td><b>Search</b></td><td>Find a person or vehicle by description, colour or plate.</td></tr>
+    <tr><td><b>Playback</b></td><td>Recorded video by camera and day.</td></tr>
+    <tr><td><b>Analytics</b></td><td>Busy times, counts and how well each rule performs.</td></tr>
+  </table>
+  <p><b>Backups</b> happen automatically every night to <code>C:\AIVisionEdge\backups</code> (the newest 14 are kept). To also keep a copy in OneDrive or Google Drive, ask your installer to set it up.</p>
+  <p>To silence one camera for an hour (for example while you're working in the garden), use <b class="ui">Mute 1 h</b> on its card. Detection and recording carry on.</p>
+</section>
+
+<section id="help">
+  <h2><span class="num">12</span>If something's wrong</h2>
+  <table>
+    <tr><th>Problem</th><th>Try this</th></tr>
+    <tr><td>Dashboard won't open</td><td>Wait a minute after starting the PC. If it still won't open: Start → type <b>Services</b> → find <b class="ui">AI Vision Edge</b> → <b class="ui">Restart</b>.</td></tr>
+    <tr><td>A camera shows offline</td><td>Check its power and network. Open it in the camera's own app. If its address changed, click <b class="ui">Edit</b> on the camera and update it. Tip: give cameras a fixed address in your router.</td></tr>
+    <tr><td>Phone (Larix) can't connect</td><td>Set the Wi-Fi to <b>Private</b> (step 4). Check the PC's address hasn't changed with <code>ipconfig</code>.</td></tr>
+    <tr><td>No phone alerts</td><td>Click <b class="ui">Send test</b> in Settings → Phone notifications. Check the topic name matches exactly in the ntfy app, and that the rule's severity matches <b class="ui">Notify for</b>.</td></tr>
+    <tr><td>Too many false alarms</td><td>Lower <b class="ui">Detection sensitivity</b>, make zones smaller, or limit rules to night hours.</td></tr>
+    <tr><td>PC is slow</td><td>In <b class="ui">Settings → Performance</b>, lower <b class="ui">Analysis speed</b> to 2, keep <b class="ui">Rest the AI when nothing moves</b> on, and use cameras' low-resolution streams.</td></tr>
+    <tr><td>Anything else</td><td><b class="ui">Settings → System health</b> shows what's not working. Logs are in <code>C:\AIVisionEdge\storage\logs</code>; send them to your installer.</td></tr>
+  </table>
+  <h3>Updating and uninstalling</h3>
+  <p>To update, run the newer installer. It keeps your cameras, rules, alerts and recordings. To uninstall, use <b class="ui">Settings → Apps → AI Vision Edge → Uninstall</b>. Your data in <code>C:\AIVisionEdge</code> is kept; delete that folder too if you want everything gone.</p>
+</section>
+</main>
+</body>
+</html>

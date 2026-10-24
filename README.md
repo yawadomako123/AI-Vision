@@ -124,7 +124,7 @@ npm run build                 # the API serves this build at http://127.0.0.1:80
 - User: `publisher`, password: the `MEDIAMTX_PUBLISH_PASSWORD` value in `.env` (generated at setup; Docker passes it to MediaMTX)
 - Video: 640×480, 15 fps
 
-In the dashboard, add a camera with stream URL `rtsp://127.0.0.1:8554/cam1`. Mount the phone high and angled down, keep it plugged in, and only film places you're allowed to. If the phone can't connect, allow Docker Desktop on *Private* networks in Windows Firewall (TCP 8554).
+In the dashboard, add a camera with stream URL `rtsp://127.0.0.1:8554/cam1`. Mount the phone high and angled down, keep it plugged in, and only film places you're allowed to. If the phone can't connect, set the PC's Wi-Fi to a *Private* network (Settings → Network & internet). Native installs allow TCP 8554 on private networks; with Docker, allow Docker Desktop there in Windows Firewall.
 
 **Real IP camera: use Find cameras.** Connect the camera to the same router or Wi-Fi as this computer, then go to **Cameras → Find cameras**. It searches the local network in about 5 seconds, two ways:
 - **ONVIF discovery:** most IP cameras (Hikvision, Dahua, Reolink, Tapo, Uniview, Axis, Amcrest…) answer with their name and model. Enter the camera's username and password and press **Get streams**. The camera itself returns its stream addresses, and the lowest-resolution one is marked *recommended* (lightest to analyse).
@@ -132,7 +132,7 @@ In the dashboard, add a camera with stream URL `rtsp://127.0.0.1:8554/cam1`. Mou
 
 Pick one and the **Add camera** form opens pre-filled. Press **Check stream** to confirm it works before saving. Only private (local) addresses are ever contacted. When the API runs inside Docker (`--profile full`), it can't see your home network, so Find cameras only works with the API running natively (`scripts/run-api.ps1`) or with host networking on Linux. If a camera isn't found, switch on ONVIF/RTSP in the camera's own app (Tapo and Reolink have it off by default and need a separate "camera account").
 
-**Adding by hand:** enter the RTSP URL (prefer the low-resolution substream) (prefer the low-resolution substream), for example `rtsp://user:pass@192.168.1.50:554/stream2`. Passwords are encrypted in the database and never shown again. For live view in the browser, also add the camera as a MediaMTX source (see `infra/mediamtx/mediamtx.yml`) and register `rtsp://127.0.0.1:8554/<path>` instead.
+**Adding by hand:** enter the RTSP URL (prefer the low-resolution substream), for example `rtsp://user:pass@192.168.1.50:554/stream2`. Passwords are encrypted in the database and never shown again. Live view and recording work for it automatically (the camera hub relays it).
 
 **Public live webcams (testing without a camera):** `scripts/live-test.py` runs the whole system on any live stream for a few minutes. It adds a temporary camera with a zone and a count-only line, prints status every 30 s, then removes it. It accepts RTSP, HLS (`.m3u8`) or a YouTube live link (resolved with `yt-dlp`; those addresses expire after a few hours, so they suit tests only):
 
@@ -186,7 +186,7 @@ The integrated GPU manages about 9–12 detections a second in total, shared bet
 
 ## Windows installer (for customers)
 
-One `.exe` that sets up everything with no Docker, Git, Node.js or Python needed on the customer's PC:
+One `.exe` that sets up everything with no Docker, Git, Node.js or Python needed on the customer's PC. Customers then follow [docs/getting-started.html](docs/getting-started.html) (also in their Start menu and on the installer's last page). To build it:
 
 ```powershell
 winget install --id JRSoftware.InnoSetup -e   # once, on the build PC (free)
@@ -196,7 +196,7 @@ winget install --id JRSoftware.InnoSetup -e   # once, on the build PC (free)
 The build bundles the app from git `HEAD` (commit first), the pre-built dashboard, the detection model, MediaMTX, [uv](https://github.com/astral-sh/uv) and [WinSW](https://github.com/winsw/winsw); every download is checksum-verified. The installer (needs administrator):
 
 - installs to `C:\AIVisionEdge` (a short path, because Python libraries nest deeply);
-- downloads Python and the AI libraries into that folder (about 1.5 GB, several minutes), creates the secrets and the SQLite database;
+- downloads Python and the AI libraries into that folder (about 800 MB; the wizard shows MB, speed and time left, and retries on a bad connection), creates the secrets and the SQLite database;
 - registers the **AI Vision Edge** Windows service, which starts at boot (even before anyone logs in) and is restarted by Windows if it stops. The service runs `supervise.ps1`;
 - allows cameras on **private** networks to reach the camera hub (TCP 8554). Everything else listens only on this PC.
 

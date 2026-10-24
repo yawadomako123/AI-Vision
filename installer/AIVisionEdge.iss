@@ -40,17 +40,23 @@ UninstallDisplayName=AI Vision Edge
 MinVersion=10.0
 
 [Messages]
-FinishedLabel=AI Vision Edge is installed and running as a Windows service.%n%nOpen the dashboard to create your admin account. If it doesn't load yet, wait a minute: the first start takes a little longer.
+FinishedLabel=AI Vision Edge is installed and running as a Windows service.%n%nFollow the getting started guide to create your admin account and add your cameras. If the dashboard doesn't load yet, wait a minute: the first start takes a little longer.
+
+[Tasks]
+Name: "search"; Description: "Plain-English search, vehicle colour/type and number plates (adds about 480 MB)"
 
 [Files]
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#SourceDir}\*"; Excludes: "\models\siglip"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#SourceDir}\models\siglip\*"; DestDir: "{app}\models\siglip"; Tasks: search; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\AI Vision Edge dashboard"; Filename: "http://127.0.0.1:8000"
+Name: "{group}\Getting started guide"; Filename: "{app}\docs\getting-started.html"
 Name: "{group}\Uninstall AI Vision Edge"; Filename: "{uninstallexe}"
 
 [Run]
 ; The setup step (scripts\install-service.ps1) runs from [Code] below so the wizard can show its progress.
+Filename: "{app}\docs\getting-started.html"; Description: "Read the getting started guide"; Flags: shellexec postinstall skipifsilent nowait
 Filename: "http://127.0.0.1:8000"; Description: "Open the dashboard"; Flags: shellexec postinstall skipifsilent nowait
 
 [UninstallRun]
