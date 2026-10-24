@@ -100,6 +100,32 @@ begin
   end;
 end;
 
+function PowerShellExe: String;
+begin
+  // Setup itself is 32-bit: Sysnative reaches the 64-bit PowerShell.
+  Result := ExpandConstant('{win}\Sysnative\WindowsPowerShell\v1.0\powershell.exe');
+  if not FileExists(Result) then
+    Result := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+end;
+
+// An upgrade replaces files the running copy has open (mediamtx.exe, Python): stop it first.
+// The setup step registers and starts the service again at the end.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Code: Integer;
+begin
+  Result := '';
+  WizardForm.PreparingLabel.Caption := 'Stopping AI Vision Edge for the update...';
+  Exec(PowerShellExe, '-NoProfile -ExecutionPolicy Bypass -Command "' +
+    '$s = Get-Service AIVisionEdge -ErrorAction SilentlyContinue; ' +
+    'if ($s -and $s.Status -ne ''Stopped'') { Stop-Service AIVisionEdge -Force -ErrorAction SilentlyContinue; ' +
+    'try { $s.WaitForStatus(''Stopped'', ''00:00:40'') } catch {} }; ' +
+    'Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like ''' + ExpandConstant('{app}') + '\*'' } | ' +
+    'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; ' +
+    'Start-Sleep -Seconds 2"',
+    '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
 procedure RunSetupStep;
 var
   Logs, ProgressFile, ResultFile, PowerShell, Line, LastLine, Text, Outcome: String;
@@ -112,10 +138,7 @@ begin
   ResultFile := Logs + '\install-result.txt';
   DeleteFile(ProgressFile);
   DeleteFile(ResultFile);
-  // Setup itself is 32-bit: Sysnative reaches the 64-bit PowerShell.
-  PowerShell := ExpandConstant('{win}\Sysnative\WindowsPowerShell\v1.0\powershell.exe');
-  if not FileExists(PowerShell) then
-    PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  PowerShell := PowerShellExe;
 
   WizardForm.StatusLabel.Caption := 'Setting up AI Vision Edge...';
   WizardForm.FilenameLabel.Caption := 'Starting';
