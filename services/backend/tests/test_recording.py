@@ -37,10 +37,15 @@ def test_desired_paths_and_worker_url(monkeypatch):
 class FakeMediaMTX:
     def __init__(self, existing):
         self.paths, self.calls = dict(existing), []
+        self.defaults = {"recordDeleteAfter": "1d"}  # MediaMTX's file default after a (re)start
 
     def __call__(self, request):
         self.calls.append((request.method, request.url.path))
         name = request.url.path.rsplit("/", 1)[-1]
+        if request.url.path == "/v3/config/pathdefaults/get":
+            return httpx.Response(200, json=self.defaults)
+        if request.url.path == "/v3/config/pathdefaults/patch":
+            self.defaults.update(__import__("json").loads(request.content))
         if request.url.path == "/v3/config/paths/list":
             return httpx.Response(200, json={"items": [{"name": n, **c} for n, c in self.paths.items()]})
         if "/add/" in request.url.path or "/patch/" in request.url.path and "pathdefaults" not in request.url.path:
@@ -62,6 +67,13 @@ def test_sync_adds_changes_and_removes_only_our_paths(monkeypatch):
     assert ("PATCH", "/v3/config/pathdefaults/patch") in fake.calls
     assert m.sync({"cam1": {"record": True}, "aiv2": {"record": True, "source": "rtsp://x"}}, 5) == \
         {"added": 0, "changed": 0, "removed": 0}  # already in sync: no writes
+    # Each write makes MediaMTX reload (live video stutters): the second sync wrote nothing.
+    assert sum(1 for method, _ in fake.calls if method != "GET") == 4
+
+    # MediaMTX restarted (retention back to its file default): the setting is applied again.
+    fake.defaults["recordDeleteAfter"] = "1d"
+    m.sync({"cam1": {"record": True}, "aiv2": {"record": True, "source": "rtsp://x"}}, 5)
+    assert fake.defaults["recordDeleteAfter"] == "5d"
 
 
 def test_size_cap_deletes_oldest_but_never_the_segment_being_written(tmp_path):

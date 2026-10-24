@@ -62,7 +62,8 @@ function WebRtcVideo({ url, onState }: { url: string; onState: (ok: boolean) => 
         const whepEndpoint = url.endsWith("/whep") ? url : `${url}/whep`;
         const r = await fetch(whepEndpoint, {
           method: "POST",
-          headers: { "Content-Type": "application/sdp" },
+          // The API's CSRF check (every request through /api needs it; MediaMTX ignores it).
+          headers: { "Content-Type": "application/sdp", "X-Requested-With": "aivision" },
           credentials: "include",
           body: conn.localDescription!.sdp,
         });

@@ -28,6 +28,7 @@ $Root = (Resolve-Path "$PSScriptRoot\..").Path
 $ServiceName = "AIVisionEdge"
 $WinSW = Join-Path $Root "tools\winsw\$ServiceName.exe"
 $RuleName = "AI Vision Edge - cameras (RTSP 8554)"
+$VideoRule = "AI Vision Edge - live video (WebRTC UDP 8189)"
 
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -46,6 +47,7 @@ function Remove-ServiceIfPresent {
 if ($Remove) {
     Remove-ServiceIfPresent
     netsh advfirewall firewall delete rule name="$RuleName" | Out-Null
+    netsh advfirewall firewall delete rule name="$VideoRule" | Out-Null
     Write-Host "Removed. Your data in $Root\storage, backups and .env are kept."
     exit 0
 }
@@ -152,6 +154,10 @@ if ($LASTEXITCODE -ne 0) { throw "service registration failed" }
 Write-Host "== Allowing cameras through the firewall (RTSP 8554, private networks)"
 netsh advfirewall firewall delete rule name="$RuleName" | Out-Null
 netsh advfirewall firewall add rule name="$RuleName" dir=in action=allow protocol=TCP localport=8554 profile=private | Out-Null
+# Live video to a browser on another device (e.g. a phone over Tailscale) flows over UDP 8189. A video
+# session can only be started through the logged-in dashboard, so the port alone shows nothing.
+netsh advfirewall firewall delete rule name="$VideoRule" | Out-Null
+netsh advfirewall firewall add rule name="$VideoRule" dir=in action=allow protocol=UDP localport=8189 profile=private | Out-Null
 
 # 5. The service replaces the per-user start-at-login shortcut.
 Get-ChildItem "C:\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\AI Vision Edge.lnk" -ErrorAction SilentlyContinue |
