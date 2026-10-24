@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   - Starts Docker Desktop if it isn't running and waits for it (a minute or two after a reboot),
-    then `docker compose up -d`.
+    then `docker compose up -d`; checks again every minute and recovers if Docker or a container stops.
   - Starts the API (with database migrations) and the vision worker as hidden background processes.
   - Every 10 s: restarts a process that exited; restarts the API if /health stops answering;
     restarts the worker if its heartbeat file (storage/worker.heartbeat) goes stale (a hang).
@@ -126,6 +126,7 @@ function Start-Docker {
 # --- nightly backup --------------------------------------------------------------------------
 $BackupStamp = Join-Path $Logs "last-backup.txt"
 $NextBackupTry = Get-Date
+$NextDockerCheck = (Get-Date).AddMinutes(1)
 function Invoke-NightlyBackup {
     $today = (Get-Date).ToString("yyyy-MM-dd")
     if ((Get-Date).Hour -lt $BackupHour) { return }
@@ -173,6 +174,23 @@ try {
             }
         }
         if ((Get-Date) -ge $NextBackupTry) { Invoke-NightlyBackup }
+        # Docker Desktop can quit later (updates, a crash, someone closing it): the database and
+        # MediaMTX go with it. Check every minute and bring them back.
+        if ((Get-Date) -ge $NextDockerCheck) {
+            $NextDockerCheck = (Get-Date).AddMinutes(1)
+            cmd.exe /c "docker info >nul 2>&1"
+            $dockerUp = $LASTEXITCODE -eq 0
+            if ($dockerUp) {
+                cmd.exe /c "cd /d `"$Root`" && docker compose ps --status running -q db | findstr . >nul 2>&1"
+                $dbUp = $LASTEXITCODE -eq 0
+                cmd.exe /c "cd /d `"$Root`" && docker compose ps --status running -q mediamtx | findstr . >nul 2>&1"
+                $mtxUp = $LASTEXITCODE -eq 0
+            }
+            if (-not $dockerUp -or -not $dbUp -or -not $mtxUp) {
+                Log "Docker services not running (docker=$dockerUp db=$dbUp mediamtx=$mtxUp); recovering"
+                if (Start-Docker) { Log "Docker services recovered" } else { Log "Docker still not available; will keep trying" }
+            }
+        }
       } catch {
         Log "supervisor error (continuing): $_"
       }
