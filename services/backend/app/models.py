@@ -108,6 +108,10 @@ class Sighting(Base):
     # Vehicles only (app/vehicle_attrs.py); None = not a vehicle, or unsure (e.g. lights at night).
     color: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     vehicle_type: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    # Number plate (letters/digits only), its reading confidence and a picture of the plate.
+    plate: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    plate_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    plate_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     thumbnail_path: Mapped[str] = mapped_column(Text)
     context_path: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
@@ -144,6 +148,19 @@ class LineCount(Base):
     class_name: Mapped[str] = mapped_column(String(60))  # person | vehicle
     in_count: Mapped[int]
     out_count: Mapped[int]
+
+
+class WatchedPlate(Base):
+    """A plate to alert on (a stolen or banned car) or simply to name (a staff car)."""
+
+    __tablename__ = "watched_plates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plate: Mapped[str] = mapped_column(String(16), unique=True)  # normalized
+    label: Mapped[str] = mapped_column(String(120))
+    alert: Mapped[bool] = mapped_column(Boolean, default=True)  # False = just put a name to it
+    created_by: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class User(Base):

@@ -83,11 +83,13 @@ def run_retention(db: Session, storage: Path, now: datetime | None = None) -> di
 
     # Sightings (search): delete their two small images, then the rows.
     sighting_cutoff = now - timedelta(days=cfg["sighting_retention_days"])
-    old_sightings = db.execute(select(Sighting.thumbnail_path, Sighting.context_path)
+    old_sightings = db.execute(select(Sighting.thumbnail_path, Sighting.context_path, Sighting.plate_path)
                                .where(Sighting.first_seen < sighting_cutoff)).all()
-    for thumb, ctx in old_sightings:
+    for thumb, ctx, plate in old_sightings:
         unlink(thumb)
         unlink(ctx)
+        if plate:
+            unlink(plate)
     sightings = db.execute(delete(Sighting).where(Sighting.first_seen < sighting_cutoff)).rowcount
 
     events = db.execute(delete(Event).where(Event.occurred_at < event_cutoff)).rowcount

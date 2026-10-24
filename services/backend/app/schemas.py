@@ -244,6 +244,24 @@ class LineCountIn(BaseModel):
     out_count: int = Field(ge=0, le=100_000)
 
 
+class WatchedPlateIn(BaseModel):
+    plate: str = Field(min_length=2, max_length=20)
+    label: str = Field(min_length=1, max_length=120)
+    alert: bool = True
+
+
+class WatchedPlateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    plate: str
+    label: str
+    alert: bool
+    created_by: str | None
+    created_at: datetime
+    last_seen: datetime | None = None
+
+
 class LiveObject(BaseModel):
     box: tuple[float, float, float, float]  # x1, y1, x2, y2 normalized 0..1
     cls: str = Field(max_length=30)
@@ -272,6 +290,7 @@ class SettingsOut(BaseModel):
     detection_sensitivity: Literal["high", "balanced", "low"]
     motion_skip: bool
     tamper_alerts: bool
+    plates_enabled: bool
     recording_enabled: bool
     recording_days: int
     recording_max_gb: int
@@ -289,6 +308,7 @@ class SettingsUpdate(BaseModel):
     detection_sensitivity: Literal["high", "balanced", "low"] | None = None
     motion_skip: bool | None = None
     tamper_alerts: bool | None = None
+    plates_enabled: bool | None = None
     recording_enabled: bool | None = None
     recording_days: int | None = Field(default=None, ge=1, le=90)
     recording_max_gb: int | None = Field(default=None, ge=1, le=100_000)
@@ -345,6 +365,9 @@ class SightingIn(BaseModel):
     embedding: str = Field(max_length=20_000)  # base64 float16
     thumbnail: str = Field(max_length=2_000_000)  # base64 JPEG
     context: str = Field(max_length=2_000_000)
+    plate: str | None = Field(default=None, max_length=20)
+    plate_confidence: float | None = Field(default=None, ge=0, le=1)
+    plate_image: str | None = Field(default=None, max_length=500_000)  # base64 JPEG
 
 
 class SightingOut(BaseModel):
@@ -361,6 +384,10 @@ class SightingOut(BaseModel):
     score: float | None = None  # 0..1 relevance for search / similarity results
     color: str | None = None  # vehicles: e.g. "white" (None = unsure)
     vehicle_type: str | None = None  # vehicles: saloon, SUV, pickup, van, minibus, truck, bus, motorcycle...
+    plate: str | None = None
+    plate_confidence: float | None = None
+    plate_url: str | None = None  # picture of the plate: always check it, the text is a reading
+    plate_label: str | None = None  # name from the watchlist, if this plate is on it
 
 
 class SightingDetail(SightingOut):

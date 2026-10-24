@@ -32,7 +32,7 @@ from app import daily_summary
 from app.notifier import notifier
 from app.models import User
 from app.retention import run_retention
-from app.routes import actions, analytics, auth, cameras, events, internal, recordings, rules, sightings, users
+from app.routes import actions, analytics, auth, cameras, events, internal, plates, recordings, rules, sightings, users
 
 log = logging.getLogger(__name__)
 RETENTION_INTERVAL_SECONDS = 3600
@@ -88,7 +88,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for module in (auth, users, cameras, rules, events, analytics, sightings, internal, actions, recordings):
+for module in (auth, users, cameras, rules, events, analytics, sightings, internal, actions, recordings, plates):
     app.include_router(module.router)
 
 settings.event_storage_path.mkdir(parents=True, exist_ok=True)

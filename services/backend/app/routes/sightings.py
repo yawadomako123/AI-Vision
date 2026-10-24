@@ -15,8 +15,10 @@ from app.audit import audit
 from app.auth import current_user
 from app.config import settings
 from app.db import get_db
-from app.models import Camera, Event, Sighting, User
-from app.routes.internal import require_service_token
+from app.models import Camera, Event, Sighting, User, WatchedPlate
+from app.plates import SEARCH_MATCH, WATCH_MATCH, similarity
+from app.plates import normalize as normalize_plate
+from app.routes.internal import publish_event, require_service_token
 from app.schemas import SightingDetail, SightingIn, SightingOut
 from app.search_engine import (
     SearchUnavailable, TextEncoder, decode_embedding, image_relevance, rank, text_relevance,
@@ -31,14 +33,39 @@ log = logging.getLogger(__name__)
 MEDIA_PREFIX = "/media/events/"
 
 
-def _out(s: Sighting, score: float | None = None) -> SightingOut:
+def _out(s: Sighting, score: float | None = None, labels: dict[str, str] | None = None) -> SightingOut:
     return SightingOut(
         id=s.id, camera_id=s.camera_id, camera_name=s.camera.name if s.camera else None,
         object_class=s.object_class, first_seen=s.first_seen, last_seen=s.last_seen,
         duration_seconds=round((s.last_seen - s.first_seen).total_seconds(), 1), confidence=s.confidence,
         thumbnail_url=MEDIA_PREFIX + s.thumbnail_path, context_url=MEDIA_PREFIX + s.context_path, score=score,
         color=s.color, vehicle_type=s.vehicle_type,
+        plate=s.plate, plate_confidence=s.plate_confidence,
+        plate_url=MEDIA_PREFIX + s.plate_path if s.plate_path else None,
+        plate_label=labels.get(s.plate) if labels and s.plate else None,
     )
+
+
+def _labels(db: Session) -> dict[str, str]:
+    return {w.plate: w.label for w in db.scalars(select(WatchedPlate))}
+
+
+def check_watchlist(db: Session, s: Sighting) -> None:
+    """A watched plate was seen: raise a high-severity alert (with the sighting's picture)."""
+    if not s.plate:
+        return
+    best = max(((similarity(s.plate, w.plate), w) for w in db.scalars(select(WatchedPlate).where(WatchedPlate.alert))),
+               key=lambda x: x[0], default=(0.0, None))
+    score, w = best
+    if w is None or score < WATCH_MATCH:
+        return
+    publish_event(db, Event(
+        external_id=f"plate-{s.id}", camera_id=s.camera_id, event_type="plate_watchlist", severity="high",
+        occurred_at=s.first_seen, rule_name=w.label, object_class=s.object_class, confidence=s.plate_confidence,
+        details={"plate": s.plate, "watched_plate": w.plate, "label": w.label, "match": round(score, 2),
+                 "sighting_id": s.id},
+        snapshot_path=s.context_path,
+    ))
 
 
 def describe_vehicle(s: Sighting, thumbnail_jpeg: bytes | None) -> None:
@@ -88,8 +115,15 @@ def ingest_sighting(body: SightingIn, db: Session = Depends(get_db)):
                  path=[list(p) for p in body.path], embedding=emb,
                  thumbnail_path=key + "_t.jpg", context_path=key + "_c.jpg")
     describe_vehicle(s, base64.b64decode(body.thumbnail))
+    plate = normalize_plate(body.plate)
+    if plate and get_settings(db)["plates_enabled"]:
+        s.plate, s.plate_confidence = plate, body.plate_confidence
+        if body.plate_image:
+            _save_jpeg(body.plate_image, key + "_p.jpg")
+            s.plate_path = key + "_p.jpg"
     db.add(s)
     db.commit()
+    check_watchlist(db, s)
     return {"id": s.id}
 
 
@@ -120,6 +154,7 @@ def search(
     limit: int = Query(default=24, ge=1, le=100),
     color: str | None = Query(default=None, max_length=20),
     vehicle_type: str | None = Query(default=None, max_length=20),
+    plate: str | None = Query(default=None, max_length=20),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -128,10 +163,19 @@ def search(
     if not get_settings(db)["search_enabled"]:
         raise HTTPException(status.HTTP_409_CONFLICT, "Search is switched off. An admin can turn it on in Settings.")
     filters = _filters(camera_id, object_class, hours, color, vehicle_type)
+    labels = _labels(db)
+    if plate and normalize_plate(plate):
+        # Closest plates first; tolerant of a misread character or two.
+        rows = db.scalars(select(Sighting).options(joinedload(Sighting.camera))
+                          .where(*filters, Sighting.plate.is_not(None))).all()
+        scored = sorted(((similarity(plate, s.plate), s) for s in rows), key=lambda x: (-x[0], -x[1].first_seen.timestamp()))
+        audit(db, request, user, "search", detail_plate=normalize_plate(plate))
+        db.commit()
+        return [_out(s, round(sc, 3), labels) for sc, s in scored if sc >= SEARCH_MATCH][:limit]
     if not q.strip():
         rows = db.scalars(select(Sighting).options(joinedload(Sighting.camera)).where(*filters)
                           .order_by(Sighting.first_seen.desc()).limit(limit)).all()
-        return [_out(s) for s in rows]
+        return [_out(s, None, labels) for s in rows]
     try:
         query = text_encoder.encode(q.strip())
     except SearchUnavailable as exc:
@@ -143,7 +187,7 @@ def search(
                                          .where(Sighting.id.in_([i for _, i in top])))}
     audit(db, request, user, "search", detail_q=q[:100], results=len(top))
     db.commit()
-    return [_out(by_id[i], round(text_relevance(c), 3)) for c, i in top if i in by_id and text_relevance(c) > 0]
+    return [_out(by_id[i], round(text_relevance(c), 3), labels) for c, i in top if i in by_id and text_relevance(c) > 0]
 
 
 def _get(db: Session, sighting_id: int) -> Sighting:

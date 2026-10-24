@@ -24,6 +24,8 @@ DEFAULTS = {
         "tamper_alerts": True,
         # Continuous recording through MediaMTX (no re-encoding). The size cap always wins, and
         # at least 5 GB of disk is kept free.
+        # Number plates on vehicle sightings (personal data: off until an admin turns it on).
+        "plates_enabled": False,
         "recording_enabled": True,
         "recording_days": 7,
         "recording_max_gb": 20,

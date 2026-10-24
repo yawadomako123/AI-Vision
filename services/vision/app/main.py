@@ -36,6 +36,7 @@ from app.tamper import TamperDetector
 from app.overlay import draw_rules
 from app.counts import LineCounter, MinuteCounter
 from app.rule_engine import Rule, RuleEngine, RuleHit, object_positions
+from app.plates import PlateReader
 from app.sightings import SightingCollector, SiglipEmbedder
 
 log = logging.getLogger("vision")
@@ -72,9 +73,10 @@ def main() -> None:
                "tamper": True}
     live = LivePublisher(settings.api_base_url, settings.service_token) if api else None
     embedder: SiglipEmbedder | None = None
+    plate_reader: PlateReader | None = None
 
     def apply_config(cfg: dict) -> None:
-        nonlocal clip_config, embedder
+        nonlocal clip_config, embedder, plate_reader
         new_clips = ClipConfig(**{k: v for k, v in cfg.get("clips", {}).items() if k in ClipConfig.__dataclass_fields__})
         if new_clips != clip_config:
             clip_config = new_clips
@@ -109,8 +111,16 @@ def main() -> None:
             embedder = None  # frees the model's memory
             log.info("Search off: sightings not recorded")
         runtime["search"] = embedder is not None
+        want_plates = bool(cfg.get("plates_enabled")) and embedder is not None
+        if want_plates and plate_reader is None:
+            plate_reader = PlateReader()
+            log.info("Plate reading on (vehicle sightings)")
+        elif not want_plates and plate_reader is not None:
+            plate_reader = None
+            log.info("Plate reading off")
         for cam in cameras.values():
             cam["sightings"].embedder = embedder
+            cam["sightings"].plate_reader = plate_reader
 
     def fetch_api_rules() -> bool:
         """Refresh api_rules and runtime settings. Returns False if the API couldn't be reached."""
@@ -179,6 +189,7 @@ def main() -> None:
                 cameras[cam_id] = start_camera(cam_id, source, rules_for(cam_id), clip_config, runtime["fps"])
                 cameras[cam_id]["sightings"] = SightingCollector(cam_id, api.send_sighting if api else None,
                                                                  embedder if api else None)
+                cameras[cam_id]["sightings"].plate_reader = plate_reader if api else None
 
     def emit(cam: dict, hit: RuleHit, image) -> None:
         event = publisher.publish(cam["key"], hit, image, cam["engine"].rules, clips=cam["clips"])

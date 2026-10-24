@@ -200,6 +200,75 @@ function Recording() {
   );
 }
 
+function NumberPlates() {
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const list = useQuery({ queryKey: ["watchlist"], queryFn: api.watchlist });
+  const [plate, setPlate] = useState("");
+  const [label, setLabel] = useState("");
+  const [alert, setAlert] = useState(true);
+  const toggle = useMutation({
+    mutationFn: (on: boolean) => api.updateSettings({ plates_enabled: on }),
+    onSuccess: (data) => qc.setQueryData(["settings"], data),
+  });
+  const add = useMutation({
+    mutationFn: () => api.watchPlate({ plate: plate.trim(), label: label.trim(), alert }),
+    onSuccess: () => { setPlate(""); setLabel(""); qc.invalidateQueries({ queryKey: ["watchlist"] }); },
+  });
+  const remove = useMutation({ mutationFn: api.unwatchPlate, onSuccess: () => qc.invalidateQueries({ queryKey: ["watchlist"] }) });
+  const s = settings.data;
+  return (
+    <Card title="Number plates">
+      <div className="flex flex-col gap-3 p-4 text-sm">
+        <label className="flex items-start gap-2">
+          <input type="checkbox" className="mt-0.5" disabled={!isAdmin || !s} checked={!!s?.plates_enabled}
+                 onChange={(e) => toggle.mutate(e.target.checked)} />
+          <span>
+            Read number plates on vehicles
+            <span className="block text-xs text-muted">
+              Needs Search on. Works best with a camera aimed at a gate or entrance (plate at least ~130 px wide).
+              Plates are personal data: put up a camera notice, and they're deleted with sightings (Data retention).
+            </span>
+          </span>
+        </label>
+        {s && !s.search_enabled && s.plates_enabled && (
+          <p className="text-xs text-warn">Turn on plain-English search in Performance: plates are read on vehicle sightings.</p>
+        )}
+        <p className="text-xs font-medium text-muted">Watchlist: alert when one of these plates is seen (one misread character still matches).</p>
+        <ul className="divide-y divide-line rounded-lg border border-line">
+          {list.data?.length === 0 && <li className="px-3 py-2 text-muted">No plates yet.</li>}
+          {list.data?.map((w) => (
+            <li key={w.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
+              <span className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wider">{w.plate}</span>
+              <span className="min-w-0 flex-1 truncate">{w.label}</span>
+              <span className="text-xs text-muted">{w.alert ? "alerts" : "name only"} · {w.last_seen ? `seen ${timeAgo(w.last_seen)}` : "not seen"}</span>
+              {isAdmin && <Button variant="danger" onClick={() => remove.mutate(w.id)} disabled={remove.isPending}>Remove</Button>}
+            </li>
+          ))}
+        </ul>
+        {isAdmin && (
+          <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); add.mutate(); }}>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted">Plate</span>
+              <input className={`${inputCls} w-36 font-mono uppercase`} value={plate} onChange={(e) => setPlate(e.target.value)} required maxLength={20} placeholder="GR 1234-23" />
+            </label>
+            <label className="flex flex-1 flex-col gap-1">
+              <span className="text-xs text-muted">Name / note</span>
+              <input className={inputCls} value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={120} placeholder="Reported stolen" />
+            </label>
+            <label className="flex items-center gap-1.5 pb-2 text-xs">
+              <input type="checkbox" checked={alert} onChange={(e) => setAlert(e.target.checked)} /> Alert
+            </label>
+            <Button type="submit" variant="primary" disabled={add.isPending}>Add</Button>
+          </form>
+        )}
+        {(add.error || toggle.error) && <ErrorNote error={add.error || toggle.error} />}
+      </div>
+    </Card>
+  );
+}
+
 function randomTopic(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(12));
   return "aivision-" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
@@ -424,7 +493,7 @@ const ACTION_LABELS: Record<string, string> = {
   "camera.create": "Added camera", "camera.update": "Changed camera", "camera.delete": "Deleted camera", "camera.discover": "Searched for cameras",
   "rule.create": "Added rule", "rule.update": "Changed rule", "rule.delete": "Deleted rule",
   "event.review": "Reviewed event", "events.export": "Exported events", "settings.update": "Changed settings",
-  "settings.notifications": "Changed notifications", "camera.mute": "Muted camera notifications", "camera.unmute": "Unmuted camera notifications", search: "Searched", "system.arm": "Armed the system", "system.disarm": "Disarmed the system",
+  "settings.notifications": "Changed notifications", "camera.mute": "Muted camera notifications", "plate.watch": "Added watched plate", "plate.unwatch": "Removed watched plate", "camera.unmute": "Unmuted camera notifications", search: "Searched", "system.arm": "Armed the system", "system.disarm": "Disarmed the system",
 };
 
 function AuditLog() {
@@ -477,6 +546,7 @@ export default function Settings() {
         <Retention />
         <Performance />
         <Recording />
+        <NumberPlates />
       </div>
       {isAdmin && <Notifications />}
       <ChangePassword />

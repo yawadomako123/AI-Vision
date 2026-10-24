@@ -19,6 +19,8 @@ import cv2
 import numpy as np
 import supervision as sv
 
+from app.plates import StaticText
+
 log = logging.getLogger(__name__)
 
 
@@ -70,6 +72,8 @@ class _Track:
     detections: int = 0
     path: list[list[float]] = field(default_factory=list)
     path_at: float = 0.0
+    plate_crops: list = field(default_factory=list)  # [(size, crop, (x, y, frame_w, frame_h))] largest first
+    plate_checked: float = 0.0
 
 
 def _jpeg(img: np.ndarray, quality: int = 80) -> str:
@@ -81,12 +85,18 @@ def _iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, timezone.utc).isoformat()
 
 
+VEHICLES = {"car", "truck", "bus", "motorcycle"}
+PLATE_PICTURES = 3  # best pictures kept per vehicle for plate reading
+
+
 class SightingCollector:
     def __init__(self, camera_id: int, send, embedder: SiglipEmbedder | None,
                  lost_seconds: float = 4.0, max_seconds: float = 600.0, min_detections: int = 3):
         self.camera_id = camera_id
         self.send = send  # callable(payload: dict)
         self.embedder = embedder
+        self.plate_reader = None  # app.plates.PlateReader when plate reading is switched on
+        self.static_text = StaticText()
         self.lost_seconds, self.max_seconds, self.min_detections = lost_seconds, max_seconds, min_detections
         self._tracks: dict[int, _Track] = {}
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"sightings-{camera_id}")
@@ -117,6 +127,15 @@ class SightingCollector:
                 crop = frame[max(0, y1 - pad_y):min(h, y2 + pad_y), max(0, x1 - pad_x):min(w, x2 + pad_x)]
                 if crop.size:
                     t.best_score, t.best_crop, t.best_frame, t.best_box = score, crop.copy(), frame, (x1, y1, x2, y2)
+            # Plate pictures: the largest views of a vehicle (unpadded), at most one per second.
+            if self.plate_reader is not None and t.object_class in VEHICLES and ts - t.plate_checked >= 1.0:
+                t.plate_checked = ts
+                size = max(0, x2 - x1) * max(0, y2 - y1)
+                if len(t.plate_crops) < PLATE_PICTURES or size > min(p[0] for p in t.plate_crops):
+                    crop = frame[max(0, y1):min(h, y2), max(0, x1):min(w, x2)]
+                    if crop.size:
+                        entry = (size, crop.copy(), (max(0, x1), max(0, y1), w, h))
+                        t.plate_crops = sorted(t.plate_crops + [entry], key=lambda p: -p[0])[:PLATE_PICTURES]
         for tid in [tid for tid, t in self._tracks.items()
                     if ts - t.last_seen > self.lost_seconds or ts - t.first_seen > self.max_seconds]:
             self._finish(self._tracks.pop(tid))
@@ -154,7 +173,18 @@ class SightingCollector:
             cv2.rectangle(ctx, (x1, y1), (x2, y2), (255, 160, 0), 2)
             s = 360 / fw
             ctx = cv2.resize(ctx, (360, int(fh * s)), interpolation=cv2.INTER_AREA)
+            plate = {}
+            reader = self.plate_reader
+            if reader is not None and t.plate_crops:
+                text, conf, img, frame_box = reader.read_many([c for _, c, _ in t.plate_crops],
+                                                              [b for _, _, b in t.plate_crops])
+                if text and self.static_text.is_static(text, t.track_id, t.last_seen, frame_box, img):
+                    log.info("cam%s: ignoring %r, seen on other vehicles too (a sign or overlay)", self.camera_id, text)
+                    text = ""
+                if text:
+                    plate = {"plate": text, "plate_confidence": conf, "plate_image": _jpeg(img, 90) if img is not None else None}
             self.send({
+                **plate,
                 "camera_id": self.camera_id, "track_id": t.track_id, "object_class": t.object_class,
                 "first_seen": _iso(t.first_seen), "last_seen": _iso(t.last_seen),
                 "confidence": round(t.max_confidence, 3), "path": t.path,

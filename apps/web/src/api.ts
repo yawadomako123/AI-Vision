@@ -161,6 +161,20 @@ export interface Sighting {
   score: number | null;
   color: string | null; // vehicles; null = not a vehicle or unsure (e.g. lights at night)
   vehicle_type: string | null;
+  plate: string | null; // a reading: always check plate_url
+  plate_confidence: number | null;
+  plate_url: string | null;
+  plate_label: string | null; // name from the watchlist
+}
+
+export interface WatchedPlate {
+  id: number;
+  plate: string;
+  label: string;
+  alert: boolean;
+  created_by: string | null;
+  created_at: string;
+  last_seen: string | null;
 }
 
 export interface SightingDetail extends Sighting {
@@ -228,6 +242,7 @@ export interface AppSettings {
   detection_sensitivity: "high" | "balanced" | "low";
   motion_skip: boolean;
   tamper_alerts: boolean;
+  plates_enabled: boolean;
   recording_enabled: boolean;
   recording_days: number;
   recording_max_gb: number;
@@ -323,6 +338,10 @@ export const api = {
     request<{ path: string; segments: { start: string; end: string }[] }>(`/api/cameras/${id}/recordings${query({ start, end })}`),
   playbackUrl: (id: number, start: string, duration: number) =>
     `/api/cameras/${id}/playback${query({ start, duration })}`,
+  watchlist: () => request<WatchedPlate[]>("/api/plates/watchlist"),
+  watchPlate: (body: { plate: string; label: string; alert: boolean }) =>
+    request<WatchedPlate>("/api/plates/watchlist", { method: "POST", body: JSON.stringify(body) }),
+  unwatchPlate: (id: number) => request<void>(`/api/plates/watchlist/${id}`, { method: "DELETE" }),
   muteCamera: (id: number, minutes: number) =>
     request<Camera>(`/api/cameras/${id}/mute`, { method: "PUT", body: JSON.stringify({ minutes }) }),
   testCamera: (id: number) => request<CameraTestResult>(`/api/cameras/${id}/test`, { method: "POST" }),
@@ -367,7 +386,7 @@ export const api = {
   deleteRule: (id: number) => request<void>(`/api/rules/${id}`, { method: "DELETE" }),
   frameUrl: (cameraId: number) => `/api/cameras/${cameraId}/frame?t=${Date.now()}`,
 
-  search: (p: { q?: string; camera_id?: string; object_class?: string; hours?: number; color?: string; vehicle_type?: string }) =>
+  search: (p: { q?: string; camera_id?: string; object_class?: string; hours?: number; color?: string; vehicle_type?: string; plate?: string }) =>
     request<Sighting[]>(`/api/search${query({ ...p })}`),
   searchStatus: () => request<{ available: boolean; enabled: boolean }>("/api/search/status"),
   sighting: (id: number) => request<SightingDetail>(`/api/sightings/${id}`),

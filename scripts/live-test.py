@@ -28,12 +28,13 @@ from e2e import API, ENV, ROOT, kill_tree, session, wait_for  # noqa: E402
 CAMERA_NAME = "Live test camera"
 
 
-def resolve(source: str) -> str:
+def resolve(source: str, max_height: int = 480) -> str:
     if "youtube.com/" not in source and "youtu.be/" not in source:
         return source
     print("  (resolving the YouTube live stream with yt-dlp…)")
     out = subprocess.run(
-        ["uvx", "yt-dlp", "-q", "--no-warnings", "-g", "-f", "bv*[height<=480][protocol^=m3u8]/b[height<=480]", source],
+        ["uvx", "yt-dlp", "-q", "--no-warnings", "-g", "-f",
+         f"bv*[height<={max_height}][vcodec^=avc1][protocol^=m3u8]/bv*[height<={max_height}][protocol^=m3u8]/b[height<={max_height}]", source],
         capture_output=True, text=True, timeout=180)
     url = out.stdout.strip().splitlines()[0] if out.stdout.strip() else ""
     if not url.startswith("http"):
@@ -46,6 +47,7 @@ def main() -> int:
     parser.add_argument("source", help="RTSP/HTTP(S) stream URL, or a YouTube live link")
     parser.add_argument("--minutes", type=float, default=5)
     parser.add_argument("--keep", action="store_true", help="leave the camera and its events in place")
+    parser.add_argument("--max-height", type=int, default=480, help="YouTube resolution (1080 for number plates)")
     args = parser.parse_args()
 
     try:
@@ -53,7 +55,7 @@ def main() -> int:
     except httpx.HTTPError as exc:
         print(f"API not reachable at {API}: {exc}")
         return 2
-    url = resolve(args.source)
+    url = resolve(args.source, args.max_height)
     admin = session(ENV["E2E_ADMIN_USERNAME"], ENV["E2E_ADMIN_PASSWORD"])
     for cam in admin.get("/api/cameras").json():
         if cam["name"] == CAMERA_NAME:

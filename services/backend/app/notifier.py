@@ -23,12 +23,13 @@ PRIORITY = {"low": 2, "medium": 3, "high": 4}  # ntfy: 1 min .. 5 max
 TAGS = {
     "zone_entry": "rotating_light", "line_crossing": "footprints", "loitering": "hourglass",
     "occupancy_exceeded": "busts_in_silhouette", "camera_offline": "warning", "camera_online": "white_check_mark",
-    "camera_tamper": "no_entry_sign", "camera_tamper_cleared": "white_check_mark",
+    "camera_tamper": "no_entry_sign", "camera_tamper_cleared": "white_check_mark", "plate_watchlist": "oncoming_automobile",
 }
 LABELS = {
     "zone_entry": "Zone entry", "line_crossing": "Line crossing", "loitering": "Loitering",
     "occupancy_exceeded": "Occupancy exceeded", "camera_offline": "Camera offline", "camera_online": "Camera back online",
     "camera_tamper": "Camera tampering", "camera_tamper_cleared": "Camera view back to normal",
+    "plate_watchlist": "Watched plate seen",
 }
 
 
@@ -47,7 +48,10 @@ def build_message(event: dict, cfg: dict) -> dict:
     parts = [f"{label} on {camera}"]
     if event.get("rule_name"):
         parts.append(f"rule: {event['rule_name']}")
-    if event.get("object_class"):
+    if event["event_type"] == "plate_watchlist":
+        d = event.get("details") or {}
+        parts.append(f"plate {d.get('plate')} (watching {d.get('watched_plate')})")
+    elif event.get("object_class"):
         conf = f" ({round(event['confidence'] * 100)}%)" if event.get("confidence") else ""
         parts.append(f"{event['object_class']}{conf}")
     msg = {

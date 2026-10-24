@@ -7,6 +7,7 @@ const EVENT_LABELS: Record<string, string> = {
   camera_online: "Camera back online",
   camera_tamper: "Camera tampering",
   camera_tamper_cleared: "Camera view back to normal",
+  plate_watchlist: "Watched plate seen",
 };
 
 export const EVENT_TYPES = Object.keys(EVENT_LABELS);

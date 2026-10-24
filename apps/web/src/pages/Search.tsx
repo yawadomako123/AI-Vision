@@ -37,6 +37,22 @@ function vehicleLabel(s: Sighting): string | null {
   return [s.color, s.vehicle_type ?? s.object_class].filter(Boolean).join(" ");
 }
 
+/** The plate as read, with its picture: the picture is the evidence, the text is a reading. */
+function PlateTag({ s, large = false }: { s: Sighting; large?: boolean }) {
+  return (
+    <span className="flex flex-col gap-1">
+      {s.plate_url && <img src={s.plate_url} alt={`Number plate, read as ${s.plate}`} className={`${large ? "h-14" : "h-8"} w-fit rounded border border-line bg-black object-contain`} />}
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wider">{s.plate}</span>
+        {s.plate_label && <span className="rounded bg-warn/15 px-1.5 py-0.5 text-xs font-medium text-warn">{s.plate_label}</span>}
+        {large && s.plate_confidence !== null && (
+          <span className="text-xs text-muted">reading {Math.round(s.plate_confidence * 100)}% sure: check the picture</span>
+        )}
+      </span>
+    </span>
+  );
+}
+
 function SightingCard({ s, onOpen }: { s: Sighting; onOpen: () => void }) {
   return (
     <button type="button" onClick={onOpen}
@@ -48,6 +64,7 @@ function SightingCard({ s, onOpen }: { s: Sighting; onOpen: () => void }) {
         <span className="text-xs text-muted" title={formatDateTime(s.first_seen)}>
           {timeAgo(s.first_seen)} · in view {duration(s.duration_seconds)}
         </span>
+        {s.plate && <PlateTag s={s} />}
         {s.score !== null && <Relevance score={s.score} />}
       </div>
     </button>
@@ -84,6 +101,7 @@ function SightingDialog({ id, hours, onOpen }: { id: number; hours: number; onOp
             <dt className="text-muted">In view</dt><dd>{duration(d.duration_seconds)}</dd>
             <dt className="text-muted">Type</dt><dd className="capitalize">{vehicleLabel(d) ?? d.object_class} ({Math.round(d.confidence * 100)}%)</dd>
           </dl>
+          {d.plate && <PlateTag s={d} large />}
           <Link to={`/playback?camera=${d.camera_id}&t=${new Date(new Date(d.first_seen).getTime() - 5_000).toISOString()}`}
                 className="text-sm font-medium text-accent">
             Watch recording →
@@ -133,6 +151,9 @@ export default function Search() {
   const objectClass = params.get("type") ?? "";
   const color = objectClass === "vehicle" ? params.get("color") ?? "" : "";
   const vehicleType = objectClass === "vehicle" ? params.get("vtype") ?? "" : "";
+  const plate = objectClass === "vehicle" ? params.get("plate") ?? "" : "";
+  const [plateText, setPlateText] = useState(plate);
+  useEffect(() => setPlateText(plate), [plate]);
   const openId = params.get("open");
   const [text, setText] = useState(q);
   useEffect(() => setText(q), [q]);
@@ -140,9 +161,9 @@ export default function Search() {
   const status = useQuery({ queryKey: ["search-status"], queryFn: api.searchStatus, staleTime: 60_000 });
   const cameras = useQuery({ queryKey: ["cameras"], queryFn: api.cameras });
   const results = useQuery({
-    queryKey: ["search", q, hours, cameraId, objectClass, color, vehicleType],
+    queryKey: ["search", q, hours, cameraId, objectClass, color, vehicleType, plate],
     queryFn: () => api.search({ q, hours, camera_id: cameraId || undefined, object_class: objectClass || undefined,
-                                color: color || undefined, vehicle_type: vehicleType || undefined }),
+                                color: color || undefined, vehicle_type: vehicleType || undefined, plate: plate || undefined }),
     placeholderData: keepPreviousData,
     enabled: status.data?.enabled === true && (status.data.available || !q),
   });
@@ -197,6 +218,10 @@ export default function Search() {
                   <option value="">Any type</option>
                   {VEHICLE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
+                <input aria-label="Number plate" className={`${inputCls} w-36 font-mono uppercase`} placeholder="Plate…" maxLength={20}
+                       value={plateText} onChange={(e) => setPlateText(e.target.value)}
+                       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); update({ plate: plateText.trim() || null }); } }}
+                       onBlur={() => plateText.trim() !== plate && update({ plate: plateText.trim() || null })} />
               </>
             )}
           </span>

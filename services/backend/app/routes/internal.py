@@ -66,7 +66,8 @@ def worker_config(db: Session = Depends(get_db)):
     return {"clips": {"enabled": cfg["clips_enabled"]}, "search_enabled": cfg["search_enabled"],
             "analysis_fps": cfg["analysis_fps"], "live_cameras": sorted(hub.watched()),
             "detection_confidence": SENSITIVITY_CONFIDENCE.get(cfg["detection_sensitivity"], 0.5),
-            "motion_skip": cfg["motion_skip"], "tamper_alerts": cfg["tamper_alerts"]}
+            "motion_skip": cfg["motion_skip"], "tamper_alerts": cfg["tamper_alerts"],
+            "plates_enabled": cfg["plates_enabled"]}
 
 
 @router.post("/live", status_code=status.HTTP_204_NO_CONTENT)
@@ -146,6 +147,11 @@ def ingest_event(body: EventIn, db: Session = Depends(get_db)):
         snapshot_path=(body.evidence or {}).get("snapshot_path"),
         clip_path=(body.evidence or {}).get("clip_path"),
     )
+    return publish_event(db, event)
+
+
+def publish_event(db: Session, event: Event) -> EventOut:
+    """Store a new event, push it to open dashboards and notify the phone (unless muted)."""
     db.add(event)
     db.commit()
     db.refresh(event)
